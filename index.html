@@ -1,0 +1,2524 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="manifest" href="./manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+  <title>Bookshelf × ElevenReader</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+      background-color: #07080b;
+      color: #f4f4f5;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    .font-serif-display {
+      font-family: Georgia, 'Times New Roman', serif;
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 9999px; }
+
+    .reader-paragraph {
+      transition: background-color 0.2s ease, opacity 0.2s ease;
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      opacity: 0.55;
+    }
+    .reader-paragraph:hover {
+      opacity: 0.88;
+      background-color: rgba(255, 255, 255, 0.04);
+    }
+    .reader-paragraph.active-para {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.11);
+    }
+    .theme-light .reader-paragraph.active-para {
+      background-color: rgba(15, 23, 42, 0.07);
+    }
+    .theme-sepia .reader-paragraph.active-para {
+      background-color: rgba(120, 53, 15, 0.09);
+    }
+
+    .word-span {
+      transition: background-color 0.08s ease, color 0.08s ease;
+      border-radius: 4px;
+      padding: 1px 2px;
+    }
+    .word-span.active-word {
+      background-color: rgba(194, 138, 18, 0.62);
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .theme-light .word-span.active-word {
+      background-color: rgba(217, 119, 6, 0.28);
+      color: #1e293b;
+    }
+    .theme-sepia .word-span.active-word {
+      background-color: rgba(180, 83, 9, 0.30);
+      color: #451a03;
+    }
+
+    @keyframes eqBar {
+      0%, 100% { transform: scaleY(0.35); }
+      50% { transform: scaleY(1); }
+    }
+    .eq-bar {
+      transform-origin: bottom;
+      animation: eqBar 0.9s ease-in-out infinite;
+    }
+    .eq-bar:nth-child(2) { animation-delay: 0.2s; }
+    .eq-bar:nth-child(3) { animation-delay: 0.4s; }
+    .drop-active {
+      border-color: #0a84ff !important;
+      background-color: rgba(10, 132, 255, 0.12) !important;
+    }
+    .voice-orb {
+      background: conic-gradient(from 120deg, #34d399, #38bdf8, #a78bfa, #f472b6, #34d399);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center bg-[#050608]">
+
+  <!-- Desktop View Mode Toggle -->
+  <div class="hidden md:flex items-center justify-between w-full max-w-5xl px-4 py-2.5 text-xs text-zinc-400">
+    <div class="flex items-center gap-2">
+      <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-orange-500/20 text-orange-400 font-bold text-[11px]">B</span>
+      <span class="font-medium text-zinc-200">Bookshelf × ElevenReader</span>
+      <span class="text-zinc-600">|</span>
+      <span>Offline-Cached EPUB, Anchors, Notes &amp; Quick Lookup</span>
+    </div>
+    <div class="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg p-0.5">
+      <button id="btnModePhone" onclick="setViewportMode('phone')" class="px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-100 font-medium transition">Phone View</button>
+      <button id="btnModeFull" onclick="setViewportMode('full')" class="px-2.5 py-1 rounded-md text-zinc-400 hover:text-zinc-200 transition">Wide View</button>
+    </div>
+  </div>
+
+  <!-- App Shell -->
+  <div id="appShell" class="w-full max-w-[430px] h-screen md:h-[844px] md:max-h-[90vh] bg-black text-zinc-100 flex flex-col relative overflow-hidden md:rounded-[38px] md:border md:border-zinc-800/90 md:shadow-2xl transition-all duration-300"
+       ondragover="handleShellDragOver(event)" ondragleave="handleShellDragLeave(event)" ondrop="handleShellDrop(event)">
+
+    <!-- Drag-and-Drop Overlay -->
+    <div id="shellDropOverlay" class="hidden absolute inset-0 z-50 bg-black/85 backdrop-blur-sm border-2 border-dashed border-[#0a84ff] m-3 rounded-3xl flex flex-col items-center justify-center text-center p-6 pointer-events-none">
+      <div class="w-14 h-14 rounded-2xl bg-[#0a84ff]/20 text-[#0a84ff] flex items-center justify-center mb-3">
+        <i data-lucide="sparkles" class="w-7 h-7"></i>
+      </div>
+      <p class="text-base font-bold text-white">Drop File to Cache &amp; Stream</p>
+      <p class="text-xs text-zinc-400 mt-1">Saved offline in IndexedDB · EPUB, HTML, MD, TXT</p>
+    </div>
+
+    <!-- Top Header -->
+    <header id="mainHeader" class="px-5 pt-5 pb-3 bg-[#111216]/95 backdrop-blur border-b border-white/[0.06] flex items-center justify-between shrink-0 z-10">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <h1 id="headerTitle" class="font-serif-display text-[25px] font-bold tracking-tight text-white truncate">My Library</h1>
+        <span id="offlineBadge" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          <span id="offlineBadgeText">Cached</span>
+        </span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button onclick="openAccountModal()" title="Account &amp; Cloud Sync" class="p-2 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 transition">
+          <i data-lucide="cloud" class="w-4 h-4"></i>
+        </button>
+        <button onclick="openRedeemModal()" title="Redeem Code" class="p-2 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 transition">
+          <i data-lucide="ticket" class="w-4 h-4"></i>
+        </button>
+        <button onclick="openAddModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a84ff] hover:bg-[#0070e0] text-white text-xs font-semibold transition shadow-sm">
+          <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+          <span>Upload</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Scrollable Content Area -->
+    <main id="mainContent" class="flex-1 overflow-y-auto px-4 py-4 pb-32 space-y-5"></main>
+
+    <!-- Reader Overlay -->
+    <section id="readerView" class="hidden absolute inset-0 z-30 flex flex-col bg-[#1b1b1e] text-zinc-100 transition-colors duration-200">
+      <!-- Reader Top Bar -->
+      <div id="readerTopBar" class="px-4 py-2.5 flex items-center justify-between border-b border-white/[0.07] shrink-0">
+        <button onclick="closeReader()" class="p-1.5 rounded-full hover:bg-white/10 text-zinc-200 transition">
+          <i data-lucide="chevron-left" class="w-5 h-5"></i>
+        </button>
+        <p id="readerTitle" class="text-sm font-semibold truncate max-w-[65%] text-center">Book Title</p>
+        <button onclick="toggleReaderSettings()" title="Typography &amp; Table Settings" class="p-1.5 rounded-full hover:bg-white/10 transition">
+          <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Accessible Quick Study Bar (Always 1 tap away, never buried) -->
+      <div class="px-3 py-2 border-b border-white/[0.06] bg-black/20 flex items-center gap-1.5 overflow-x-auto shrink-0">
+        <button onclick="openChaptersModal()" class="px-2.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[11px] font-medium text-zinc-200 whitespace-nowrap flex items-center gap-1 transition">
+          <span>Contents</span>
+        </button>
+        <button onclick="openPinsModal()" class="px-2.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[11px] font-medium text-zinc-200 whitespace-nowrap flex items-center gap-1 transition">
+          <span>Bookmarks &amp; Anchors</span>
+          <span id="pinsCountBadge" class="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px]">0</span>
+        </button>
+        <button onclick="openNotesModal()" class="px-2.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[11px] font-medium text-zinc-200 whitespace-nowrap flex items-center gap-1 transition">
+          <span>Notes</span>
+          <span id="notesCountBadge" class="px-1.5 py-0.2 rounded-full bg-[#0a84ff]/25 text-[#38bdf8] text-[10px]">0</span>
+        </button>
+        <button onclick="openLookupModal()" class="px-2.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[11px] font-medium text-zinc-200 whitespace-nowrap flex items-center gap-1 transition">
+          <span>Lookup</span>
+        </button>
+      </div>
+
+      <!-- Reader Typography, Theme & Table Mode Popover -->
+      <div id="readerSettingsPanel" class="hidden px-4 py-3 border-b border-white/10 bg-black/40 backdrop-blur-md space-y-3 shrink-0">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium opacity-75">Theme</span>
+          <div class="flex items-center gap-2">
+            <button onclick="setReaderTheme('dark')" class="px-3 py-1 rounded-full text-xs font-medium bg-[#1b1b1e] text-zinc-100 border border-zinc-700">Dark</button>
+            <button onclick="setReaderTheme('sepia')" class="px-3 py-1 rounded-full text-xs font-medium bg-[#f4ecd8] text-[#433422] border border-[#d6c7a9]">Sepia</button>
+            <button onclick="setReaderTheme('light')" class="px-3 py-1 rounded-full text-xs font-medium bg-white text-zinc-900 border border-zinc-300">Light</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium opacity-75">Text Size</span>
+          <div class="flex items-center gap-2">
+            <button onclick="changeFontSize(-1)" class="w-8 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold">A-</button>
+            <span id="fontSizeDisplay" class="text-xs w-8 text-center font-mono">19px</span>
+            <button onclick="changeFontSize(1)" class="w-8 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold">A+</button>
+          </div>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium opacity-75">Table Narration</span>
+          <button onclick="toggleTableMode()" id="btnTableMode" class="px-3 py-1 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            Header-Paired (Smart)
+          </button>
+        </div>
+      </div>
+
+      <!-- Windowed Reader Text Body -->
+      <div class="relative flex-1 overflow-hidden flex flex-col">
+        <div id="readerBody" class="flex-1 overflow-y-auto px-4 py-5 pb-14 space-y-3 leading-relaxed max-w-2xl mx-auto w-full"></div>
+        <div class="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-[#1b1b1e] to-transparent opacity-90"></div>
+      </div>
+
+      <!-- Audio Narration Dock -->
+      <div id="readerAudioDock" class="px-5 pt-2 pb-5 bg-[#1b1b1e] text-zinc-100 shrink-0 space-y-3">
+        <div class="flex items-center justify-center">
+          <button onclick="openChaptersModal()" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-xs text-zinc-300 max-w-[85%] transition">
+            <i data-lucide="list" class="w-3.5 h-3.5 shrink-0 opacity-75"></i>
+            <span id="readerChapterLabel" class="truncate">Chapter 1</span>
+          </button>
+        </div>
+
+        <div class="space-y-1">
+          <div class="w-full h-1.5 bg-zinc-700/70 rounded-full overflow-hidden cursor-pointer" onclick="seekByBar(event)">
+            <div id="readerProgressBar" class="h-full bg-white rounded-full transition-all duration-200" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-zinc-400 font-mono">
+            <span id="paraCounter">1 / 1</span>
+            <span id="audioStatusText">Ready</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between px-1">
+          <button onclick="cycleSleepTimer()" id="btnSleep" title="Sleep Timer" class="p-2 text-zinc-300 hover:text-white flex items-center gap-1 transition">
+            <i data-lucide="moon" class="w-5 h-5"></i>
+            <span id="sleepLabel" class="hidden text-[11px] font-mono">15m</span>
+          </button>
+
+          <button onclick="prevParagraph()" title="Previous Block" class="p-2 text-zinc-200 hover:text-white transition">
+            <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+          </button>
+
+          <button onclick="togglePlayPause()" id="btnPlayPause" class="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition">
+            <svg id="playSvg" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="ml-0.5"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+            <svg id="pauseSvg" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          </button>
+
+          <button onclick="nextParagraph()" title="Next Block" class="p-2 text-zinc-200 hover:text-white transition">
+            <i data-lucide="rotate-cw" class="w-5 h-5"></i>
+          </button>
+
+          <button onclick="cycleSpeed()" id="btnSpeed" class="px-2 py-1 text-sm font-semibold font-mono text-zinc-200 hover:text-white transition">1x</button>
+        </div>
+
+        <div class="flex items-center justify-between px-2 pt-0.5">
+          <button onclick="cycleContinuousMode()" id="btnContinuous" title="Continuous Play" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-xs text-zinc-200 transition">
+            <i data-lucide="repeat" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span id="continuousLabel" class="text-[11px]">Next</span>
+          </button>
+
+          <button onclick="openVoiceModal()" class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-xs transition">
+            <span id="voiceEngineDot" class="w-4 h-4 rounded-full voice-orb shrink-0"></span>
+            <span id="activeVoiceLabel" class="font-medium text-white">Lily</span>
+          </button>
+
+          <button onclick="toggleBookmarkCurrent()" id="btnBookmark" title="Bookmark" class="p-2 rounded-full hover:bg-white/10 text-zinc-300 transition">
+            <i data-lucide="bookmark" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Persistent Mini-Player -->
+    <div id="miniPlayer" class="hidden absolute bottom-[72px] left-3 right-3 z-20 bg-[#1c1e26]/95 backdrop-blur-md border border-white/10 rounded-2xl px-3.5 py-2.5 flex items-center justify-between shadow-xl cursor-pointer" onclick="reopenActiveBook()">
+      <div class="flex items-center gap-3 min-w-0">
+        <div id="miniCover" class="w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-white font-bold text-sm shadow">B</div>
+        <div class="min-w-0">
+          <p id="miniTitle" class="text-xs font-semibold text-white truncate">Book Title</p>
+          <div class="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <div id="miniEq" class="hidden items-end gap-0.5 h-2.5">
+              <span class="w-0.5 h-full bg-amber-400 eq-bar"></span>
+              <span class="w-0.5 h-full bg-amber-400 eq-bar"></span>
+              <span class="w-0.5 h-full bg-amber-400 eq-bar"></span>
+            </div>
+            <span id="miniSubtitle" class="truncate">Tap to resume</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-1 shrink-0" onclick="event.stopPropagation()">
+        <button onclick="togglePlayPause()" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition">
+          <span id="miniPlayLabel" class="text-xs font-bold">▶</span>
+        </button>
+        <button onclick="stopAndHideMini()" class="p-1.5 rounded-full text-zinc-400 hover:text-white transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Bottom Tab Bar -->
+    <nav id="bottomNav" class="h-[68px] bg-[#0c0d10]/95 backdrop-blur-lg border-t border-white/[0.08] px-2 flex items-center justify-around shrink-0 z-20">
+      <button onclick="switchTab('library')" data-tab="library" class="nav-btn flex flex-col items-center justify-center gap-1 w-16 py-1 text-[#0a84ff] transition">
+        <i data-lucide="book-open" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">My Library</span>
+      </button>
+      <button onclick="switchTab('favorites')" data-tab="favorites" class="nav-btn flex flex-col items-center justify-center gap-1 w-16 py-1 text-zinc-500 hover:text-zinc-300 transition">
+        <i data-lucide="heart" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">Favorites</span>
+      </button>
+      <button onclick="switchTab('home')" data-tab="home" class="nav-btn flex flex-col items-center justify-center gap-1 w-16 py-1 text-zinc-500 hover:text-zinc-300 transition">
+        <i data-lucide="home" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">Home</span>
+      </button>
+      <button onclick="switchTab('search')" data-tab="search" class="nav-btn flex flex-col items-center justify-center gap-1 w-16 py-1 text-zinc-500 hover:text-zinc-300 transition">
+        <i data-lucide="search" class="w-5 h-5"></i>
+        <span class="text-[10px] font-medium">Search</span>
+      </button>
+    </nav>
+
+    <!-- Bookmarks & Anchors Modal -->
+    <div id="pinsModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-3.5 shadow-2xl max-h-[82%] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <div>
+            <h2 class="text-base font-bold text-white">Bookmarks &amp; Anchors</h2>
+            <p class="text-[11px] text-zinc-400">Pin named jump points anywhere in your book</p>
+          </div>
+          <button onclick="closeModal('pinsModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Quick Drop Anchor at Current Block -->
+        <div class="flex gap-2 shrink-0">
+          <input id="anchorLabelInput" type="text" placeholder="Anchor name (e.g. Key Formula)" class="flex-1 px-3 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0a84ff]" />
+          <button onclick="addAnchorAtCurrent()" class="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-semibold shrink-0 transition">
+            + Pin Here
+          </button>
+        </div>
+
+        <div id="pinsList" class="space-y-2 overflow-y-auto pr-1 flex-1"></div>
+      </div>
+    </div>
+
+    <!-- Notes Modal -->
+    <div id="notesModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-3.5 shadow-2xl max-h-[82%] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <div>
+            <h2 class="text-base font-bold text-white">Study Notes</h2>
+            <p id="notesContextLabel" class="text-[11px] text-zinc-400">Attached to current block</p>
+          </div>
+          <button onclick="closeModal('notesModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="space-y-2 shrink-0">
+          <textarea id="noteTextInput" rows="2" placeholder="Write a note for this passage or table..." class="w-full px-3 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0a84ff] resize-none"></textarea>
+          <button onclick="saveNoteAtCurrent()" class="w-full py-2 rounded-xl bg-[#0a84ff] hover:bg-[#0070e0] text-white text-xs font-semibold transition">
+            Save Note on Current Block
+          </button>
+        </div>
+
+        <div id="notesList" class="space-y-2 overflow-y-auto pr-1 flex-1"></div>
+      </div>
+    </div>
+
+    <!-- Quick Lookup Modal -->
+    <div id="lookupModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-3.5 shadow-2xl max-h-[82%] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <div>
+            <h2 class="text-base font-bold text-white">Quick Lookup</h2>
+            <p class="text-[11px] text-zinc-400">Instant cross-reference across this book &amp; your library</p>
+          </div>
+          <button onclick="closeModal('lookupModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="flex gap-2 shrink-0">
+          <input id="lookupInput" type="text" oninput="runQuickLookup(this.value)" placeholder="Type a term (e.g. OLTP, ACID, memory)..." class="flex-1 px-3 py-2 rounded-xl bg-black/50 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0a84ff]" />
+          <button onclick="lookupSelectedActiveTerm()" class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-medium text-white shrink-0 transition">
+            Clear
+          </button>
+        </div>
+
+        <div id="lookupSuggestions" class="flex flex-wrap gap-1.5 shrink-0"></div>
+        <div id="lookupResults" class="space-y-2 overflow-y-auto pr-1 flex-1"></div>
+      </div>
+    </div>
+
+    <!-- Smooth Smart-Upload Modal -->
+    <div id="addModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-white">Upload &amp; Cache Offline</h2>
+            <p class="text-[11px] text-zinc-400">Saved locally in IndexedDB — works offline anytime</p>
+          </div>
+          <button onclick="closeModal('addModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <label id="dropZoneLabel"
+               ondragover="handleModalDragOver(event)"
+               ondragleave="handleModalDragLeave(event)"
+               ondrop="handleModalDrop(event)"
+               class="flex flex-col items-center justify-center text-center p-5 rounded-2xl border-2 border-dashed border-white/15 bg-black/30 hover:border-[#0a84ff]/70 hover:bg-[#0a84ff]/5 cursor-pointer transition">
+          <div class="w-10 h-10 rounded-full bg-[#0a84ff]/15 text-[#0a84ff] flex items-center justify-center mb-2">
+            <i data-lucide="file-up" class="w-5 h-5"></i>
+          </div>
+          <span class="text-sm font-semibold text-white">Drop .epub or text file, or tap to upload</span>
+          <span class="text-[11px] text-zinc-400 mt-0.5">.epub, .html, .md, .txt, .csv — caches &amp; streams immediately</span>
+          <input id="fileImportInput" type="file" accept=".epub,.txt,.md,.text,.html,.htm,.csv" class="hidden" onchange="handleFileImport(event)" />
+        </label>
+
+        <div class="flex items-center gap-2 text-[11px] text-zinc-500">
+          <div class="flex-1 h-px bg-white/10"></div>
+          <span>OR PASTE STUDY NOTES</span>
+          <div class="flex-1 h-px bg-white/10"></div>
+        </div>
+
+        <div class="space-y-2.5">
+          <textarea id="inputBookContent" rows="4" placeholder="Paste any study guide, notes, or HTML table here..." class="w-full px-3.5 py-2.5 rounded-2xl bg-black/50 border border-white/10 text-sm text-white focus:outline-none focus:border-[#0a84ff] resize-none"></textarea>
+          <button onclick="smartReadPastedText()" class="w-full py-2.5 rounded-xl bg-[#0a84ff] hover:bg-[#0070e0] text-white font-semibold text-sm flex items-center justify-center gap-2 transition">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span>Transcribe &amp; Stream Now</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chapters / TOC Modal -->
+    <div id="chaptersModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-3 shadow-2xl max-h-[75%] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <h2 class="text-base font-bold text-white">Chapters &amp; Tables</h2>
+          <button onclick="closeModal('chaptersModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <div id="chaptersList" class="space-y-1.5 overflow-y-auto pr-1 flex-1"></div>
+      </div>
+    </div>
+
+    <!-- Neural Voice & Provider Modal -->
+    <div id="voiceModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-3.5 shadow-2xl max-h-[85%] flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <div>
+            <h2 class="text-base font-bold text-white">Voice Engine</h2>
+            <p class="text-xs text-zinc-400">Device voices work offline; add key for neural voices</p>
+          </div>
+          <button onclick="closeModal('voiceModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="p-3 rounded-2xl bg-black/40 border border-white/10 space-y-2 shrink-0">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-white">Neural Voice Key (Online)</span>
+            <span id="elKeyStatus" class="text-[10px] text-amber-300">Offline device voice</span>
+          </div>
+          <div class="flex gap-1.5">
+            <select id="ttsProviderSelect" onchange="onProviderChange()" class="px-2 py-1.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white focus:outline-none">
+              <option value="elevenlabs">ElevenLabs</option>
+              <option value="openai">OpenAI TTS</option>
+            </select>
+            <input id="elevenKeyInput" type="password" placeholder="Paste API key (sk_...)" class="flex-1 px-2.5 py-1.5 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0a84ff]" />
+            <button onclick="saveTtsKey()" class="px-3 py-1.5 rounded-xl bg-[#0a84ff] hover:bg-[#0070e0] text-xs font-semibold text-white transition">Save</button>
+          </div>
+        </div>
+
+        <div id="voiceList" class="space-y-2 overflow-y-auto pr-1 flex-1"></div>
+      </div>
+    </div>
+
+    <!-- Redeem Code Modal -->
+    <div id="redeemModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="w-full max-w-sm bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-bold text-white">Redeem Access Code</h2>
+          <button onclick="closeModal('redeemModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+        <p class="text-xs text-zinc-400 leading-relaxed">
+          Enter a book code to unlock sample textbooks. Try <span class="font-mono text-zinc-200 bg-white/10 px-1.5 py-0.5 rounded">ELEVEN2026</span> for a bonus audio essay.
+        </p>
+        <input id="redeemCodeInput" type="text" placeholder="Enter code (e.g. ELEVEN2026)" class="w-full px-3 py-2.5 rounded-xl bg-black/50 border border-white/10 text-sm text-white uppercase tracking-wider focus:outline-none focus:border-[#0a84ff]" />
+        <button onclick="submitRedeemCode()" class="w-full py-2.5 rounded-xl bg-[#0a84ff] hover:bg-[#0070e0] text-white font-semibold text-sm transition">
+          Redeem
+        </button>
+      </div>
+    </div>
+
+    <!-- Account & Cloud Sync Modal (SaaS Multi-Device Persistence) -->
+    <div id="accountModal" class="hidden absolute inset-0 z-40 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-3">
+      <div class="w-full max-w-md bg-[#16181f] border border-white/10 rounded-3xl p-5 space-y-3.5 shadow-2xl max-h-[88%] overflow-y-auto">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-white">Account &amp; Cloud Sync</h2>
+            <p class="text-[11px] text-zinc-400">Sync library, positions, notes &amp; anchors across devices</p>
+          </div>
+          <button onclick="closeModal('accountModal')" class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-zinc-400">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="p-3 rounded-2xl bg-black/35 border border-white/10 space-y-2">
+          <label class="block text-[11px] font-semibold text-zinc-300">Personal Sync User ID (Match on all devices)</label>
+          <input id="syncUserIdInput" type="text" placeholder="e.g. my-bookshelf-id" class="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white font-mono focus:outline-none focus:border-[#0a84ff]" />
+        </div>
+
+        <div class="p-3 rounded-2xl bg-black/35 border border-white/10 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-white">Supabase Cloud Sync</span>
+            <span id="cloudSyncStatus" class="text-[10px] text-zinc-400">Local only</span>
+          </div>
+          <input id="supabaseUrlInput" type="url" placeholder="https://your-project.supabase.co" class="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0a84ff]" />
+          <input id="supabaseKeyInput" type="password" placeholder="Supabase Anon Public Key" class="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0a84ff]" />
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button onclick="pushToCloud()" class="py-2 rounded-xl bg-[#0a84ff] hover:bg-[#0070e0] text-white text-xs font-semibold transition">Push to Cloud ↑</button>
+            <button onclick="pullFromCloud()" class="py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition">Pull from Cloud ↓</button>
+          </div>
+        </div>
+
+        <div class="p-3 rounded-2xl bg-black/35 border border-white/10 space-y-2">
+          <span class="block text-xs font-semibold text-white">Offline Backup File (.json)</span>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="exportLibraryBackup()" class="py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition">Export Backup</button>
+            <label class="py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium text-center cursor-pointer transition">
+              Import Backup
+              <input type="file" accept=".json" class="hidden" onchange="importLibraryBackup(event)" />
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="hidden absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-zinc-800/95 border border-white/15 text-xs font-medium text-white shadow-xl whitespace-nowrap">
+      Notification
+    </div>
+
+  </div>
+
+  <script>
+    const WINDOW_SIZE = 24;
+    const DB_NAME = 'BookshelfOfflineDB';
+    const DB_STORE = 'appState';
+
+    const DEFAULT_BOOKS = [
+      {
+        id: 'ml-textbook',
+        title: 'Technical Architecture & ML Tables',
+        author: 'Textbook Sample (EPUB-Ready)',
+        category: 'EPUB',
+        coverGradient: 'from-blue-600 to-indigo-900',
+        favorite: true,
+        progressPara: 0,
+        bookmarks: [0],
+        anchors: [{ idx: 2, label: 'Table 1.1 Workload Benchmarks' }],
+        notes: [{ id: 'n1', idx: 1, text: 'OLTP = fast row writes + ACID; OLAP = columnar analytics.', createdAt: 'Sample' }],
+        blocks: [
+          { type: 'heading', text: '1. Operational vs. Analytical Workloads (Exam Domain 4)', chapter: 'Domain 4: Analytics Workloads' },
+          { type: 'text', text: 'Core Intent: OLTP workloads optimize for rapid, single-record transactions and ACID compliance, while OLAP workloads aggregate massive historical datasets.', chapter: 'Domain 4: Analytics Workloads' },
+          {
+            type: 'table',
+            chapter: 'Domain 4: Analytics Workloads',
+            caption: 'Table 1.1 — Workload & Algorithm Comparison',
+            headers: ['Workload', 'Latency', 'Data Shape', 'Primary Store'],
+            rows: [
+              ['OLTP', 'Milliseconds', 'Normalized rows', 'Azure SQL Database'],
+              ['OLAP', 'Seconds–Minutes', 'Star schema / columnar', 'Synapse Analytics'],
+              ['Streaming', 'Sub-second', 'Time-series events', 'Event Hubs + Stream']
+            ]
+          },
+          { type: 'text', text: 'Notice how the narrator reads each table row paired with its column header while the scan display tracks every spoken word.', chapter: 'Domain 4: Analytics Workloads' }
+        ]
+      },
+      {
+        id: 'meditations',
+        title: 'Meditations (Selected Passages)',
+        author: 'Marcus Aurelius',
+        category: 'Book',
+        coverGradient: 'from-amber-600 to-orange-800',
+        favorite: true,
+        progressPara: 0,
+        bookmarks: [],
+        anchors: [],
+        notes: [],
+        blocks: [
+          { type: 'text', text: "You have power over your mind—not outside events. Realize this, and you will find strength.", chapter: 'Book IV' },
+          { type: 'text', text: "When you arise in the morning, think of what a precious privilege it is to be alive—to breathe, to think, to enjoy, to love.", chapter: 'Book II' },
+          { type: 'text', text: "Waste no more time arguing about what a good person should be. Be one.", chapter: 'Book X' }
+        ]
+      },
+      {
+        id: 'deep-work-notes',
+        title: 'Cognitive Focus & Study Systems',
+        author: 'Productivity Notes',
+        category: 'Notes',
+        coverGradient: 'from-emerald-600 to-teal-900',
+        favorite: false,
+        progressPara: 0,
+        bookmarks: [],
+        anchors: [],
+        notes: [],
+        blocks: [
+          { type: 'text', text: "Active recall paired with spaced audio review creates two distinct memory pathways: visual structure and auditory rhythm.", chapter: 'Notes' },
+          { type: 'text', text: "Before starting a 45-minute study block, queue your key readings in a single distraction-free shelf and pick a steady narration speed.", chapter: 'Notes' }
+        ]
+      }
+    ];
+
+    const BONUS_BOOK = {
+      id: 'eleven-bonus',
+      title: 'The Future of Synthetic Narration',
+      author: 'ElevenReader Dispatch',
+      category: 'Article',
+      coverGradient: 'from-purple-600 to-fuchsia-900',
+      favorite: false,
+      progressPara: 0,
+      bookmarks: [],
+      anchors: [],
+      notes: [],
+      blocks: [
+        { type: 'text', text: "Expressive text-to-speech has crossed the threshold from robotic utility to genuine storytelling.", chapter: 'Essay' },
+        { type: 'text', text: "By combining prosody, natural breath pauses, and structured table parsing, listeners can absorb entire textbooks without eye fatigue.", chapter: 'Essay' }
+      ]
+    };
+
+    const VOICE_PROFILES = [
+      { id: 'lily', name: 'Lily', tag: 'Soft, Warm Storyteller', elevenId: 'pFZP5JQG7iQjIQuC4Bku', openaiVoice: 'nova', pitch: 0.96, rateOffset: -0.05, preferGender: 'female' },
+      { id: 'rachel', name: 'Rachel', tag: 'Calm & Clear', elevenId: '21m00Tcm4TlvDq8ikWAM', openaiVoice: 'shimmer', pitch: 0.98, rateOffset: -0.03, preferGender: 'female' },
+      { id: 'brian', name: 'Brian', tag: 'Deep & Relaxed', elevenId: 'nPczCjzI2devNBz1zQrb', openaiVoice: 'onyx', pitch: 0.88, rateOffset: -0.05, preferGender: 'male' },
+      { id: 'sarah', name: 'Sarah', tag: 'Gentle Conversational', elevenId: 'EXAVITQu4vr4xnSDxMaL', openaiVoice: 'alloy', pitch: 1.0, rateOffset: -0.02, preferGender: 'female' }
+    ];
+
+    let state = {
+      books: [],
+      activeTab: 'library',
+      libraryFilter: 'All',
+      searchQuery: '',
+      activeBookId: null,
+      activeParaIndex: 0,
+      isPlaying: false,
+      speed: 1.0,
+      continuousMode: 'next',
+      tableNarrationMode: 'paired',
+      ttsProvider: 'elevenlabs',
+      ttsApiKey: '',
+      sleepMinutes: 0,
+      sleepTimerId: null,
+      userId: 'user_' + Math.random().toString(36).slice(2, 10),
+      supabaseUrl: '',
+      supabaseKey: '',
+      voiceProfileId: 'lily',
+      customVoiceName: null,
+      readerTheme: 'dark',
+      fontSize: 19
+    };
+
+    let systemVoices = [];
+    let simIntervalId = null;
+    let currentWordIdx = 0;
+    let activeAudioEl = null;
+    let playbackGen = 0;
+    let pendingDeleteId = null;
+
+    function getBookBlocks(book) {
+      if (Array.isArray(book.blocks) && book.blocks.length) return book.blocks;
+      if (Array.isArray(book.paragraphs)) {
+        return book.paragraphs.map(p => ({ type: 'text', text: p, chapter: 'Section' }));
+      }
+      return [];
+    }
+
+    function getBlockSpokenText(block) {
+      if (block.type === 'table') {
+        const cap = block.caption ? `${block.caption}. ` : 'Table. ';
+        const headers = block.headers || [];
+        const rows = block.rows || [];
+        if (state.tableNarrationMode === 'paired' && headers.length > 0) {
+          const rowText = rows.map((row, rIdx) => {
+            const pairs = row.map((cell, cIdx) => {
+              const h = headers[cIdx] ? `${headers[cIdx]}: ` : '';
+              return `${h}${cell}`;
+            }).join(', ');
+            return `Row ${rIdx + 1}: ${pairs}.`;
+          }).join(' ');
+          return `${cap}${rows.length} rows, ${headers.length} columns. ${rowText}`;
+        }
+        const flatRows = rows.map((r, i) => `Row ${i + 1}: ${r.join(', ')}.`).join(' ');
+        return `${cap}${headers.join(', ')}. ${flatRows}`;
+      }
+      return block.text || '';
+    }
+
+    // ---------- IndexedDB Offline Storage ----------
+    function openOfflineDB() {
+      return new Promise((resolve, reject) => {
+        if (!('indexedDB' in window)) return reject(new Error('No IndexedDB'));
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function loadState() {
+      let loaded = null;
+      try {
+        const db = await openOfflineDB();
+        loaded = await new Promise((resolve) => {
+          const tx = db.transaction(DB_STORE, 'readonly');
+          const req = tx.objectStore(DB_STORE).get('main');
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (e) {}
+
+      if (!loaded) {
+        try {
+          const raw = localStorage.getItem('bookshelf_eleven_state_v6');
+          if (raw) loaded = JSON.parse(raw);
+        } catch (e) {}
+      }
+
+      if (loaded) {
+        state.userId = loaded.userId || state.userId;
+        state.supabaseUrl = loaded.supabaseUrl || '';
+        state.supabaseKey = loaded.supabaseKey || '';
+        state.voiceProfileId = loaded.voiceProfileId || 'lily';
+        state.customVoiceName = loaded.customVoiceName || null;
+        state.ttsProvider = loaded.ttsProvider || 'elevenlabs';
+        state.ttsApiKey = loaded.ttsApiKey || '';
+        state.continuousMode = loaded.continuousMode || 'next';
+        state.tableNarrationMode = loaded.tableNarrationMode || 'paired';
+        state.readerTheme = loaded.readerTheme || 'dark';
+        state.fontSize = loaded.fontSize || 19;
+        state.speed = loaded.speed || 1.0;
+        if (Array.isArray(loaded.books) && loaded.books.length > 0) {
+          state.books = loaded.books;
+          return;
+        }
+      }
+      state.books = JSON.parse(JSON.stringify(DEFAULT_BOOKS));
+    }
+
+    async function saveState() {
+      const payload = {
+        userId: state.userId,
+        supabaseUrl: state.supabaseUrl,
+        supabaseKey: state.supabaseKey,
+        books: state.books,
+        voiceProfileId: state.voiceProfileId,
+        customVoiceName: state.customVoiceName,
+        ttsProvider: state.ttsProvider,
+        ttsApiKey: state.ttsApiKey,
+        continuousMode: state.continuousMode,
+        tableNarrationMode: state.tableNarrationMode,
+        readerTheme: state.readerTheme,
+        fontSize: state.fontSize,
+        speed: state.speed
+      };
+      try {
+        const db = await openOfflineDB();
+        const tx = db.transaction(DB_STORE, 'readwrite');
+        tx.objectStore(DB_STORE).put(payload, 'main');
+      } catch (e) {
+        try {
+          const compactBooks = state.books.filter(b => (b.blocks?.length || 0) < 400);
+          localStorage.setItem('bookshelf_eleven_state_v6', JSON.stringify({ ...payload, books: compactBooks }));
+        } catch (err) {}
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadState();
+      initVoices();
+      renderApp();
+      updateContinuousUI();
+      updateTableModeUI();
+      updateVoiceLabel();
+      updateOfflineBadge();
+      window.addEventListener('online', updateOfflineBadge);
+      window.addEventListener('offline', updateOfflineBadge);
+      if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      }
+      lucide.createIcons();
+    });
+
+    function updateOfflineBadge() {
+      const txt = document.getElementById('offlineBadgeText');
+      if (txt) txt.textContent = navigator.onLine ? 'Cached' : 'Offline';
+    }
+
+    function initVoices() {
+      if ('speechSynthesis' in window) {
+        const loadV = () => {
+          const raw = window.speechSynthesis.getVoices() || [];
+          if (raw.length) {
+            systemVoices = raw.slice().sort((a, b) => scoreVoice(b) - scoreVoice(a));
+          }
+        };
+        loadV();
+        window.speechSynthesis.onvoiceschanged = loadV;
+        setTimeout(loadV, 150);
+        setTimeout(loadV, 600);
+        setTimeout(loadV, 1500);
+      }
+    }
+
+    function scoreVoice(v) {
+      let s = 0;
+      const n = (v.name || '').toLowerCase();
+      if (v.lang && v.lang.startsWith('en')) s += 50;
+      if (/natural|neural|online|premium|enhanced|siri/i.test(n)) s += 80;
+      if (/google uk english female|google us english|serena|ava|zoe|allison|samantha|daniel|arthur|aria|jenny|guy/i.test(n)) s += 40;
+      if (/google/i.test(n)) s += 20;
+      if (/david|zira|mark|george|hazel|susan|heera|ravi|espeak|compact|albert|fred/i.test(n)) s -= 60;
+      return s;
+    }
+
+    function setViewportMode(mode) {
+      const shell = document.getElementById('appShell');
+      const bPhone = document.getElementById('btnModePhone');
+      const bFull = document.getElementById('btnModeFull');
+      if (mode === 'full') {
+        shell.classList.remove('max-w-[430px]', 'md:h-[844px]', 'md:rounded-[38px]');
+        shell.classList.add('max-w-4xl', 'md:h-[88vh]', 'md:rounded-2xl');
+        bFull.classList.add('bg-zinc-800', 'text-zinc-100');
+        bPhone.classList.remove('bg-zinc-800', 'text-zinc-100');
+      } else {
+        shell.classList.add('max-w-[430px]', 'md:h-[844px]', 'md:rounded-[38px]');
+        shell.classList.remove('max-w-4xl', 'md:h-[88vh]', 'md:rounded-2xl');
+        bPhone.classList.add('bg-zinc-800', 'text-zinc-100');
+        bFull.classList.remove('bg-zinc-800', 'text-zinc-100');
+      }
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        const isTarget = btn.getAttribute('data-tab') === tab;
+        btn.classList.toggle('text-[#0a84ff]', isTarget);
+        btn.classList.toggle('text-zinc-500', !isTarget);
+      });
+      const titles = { library: 'My Library', favorites: 'Favorites', home: 'Home', search: 'Search' };
+      document.getElementById('headerTitle').textContent = titles[tab] || 'My Library';
+      renderMainContent();
+    }
+
+    function renderApp() {
+      renderMainContent();
+      updateMiniPlayer();
+      updateVoiceLabel();
+    }
+
+    function renderMainContent() {
+      const container = document.getElementById('mainContent');
+      if (state.activeTab === 'library') container.innerHTML = renderLibraryView();
+      else if (state.activeTab === 'favorites') container.innerHTML = renderFavoritesView();
+      else if (state.activeTab === 'home') container.innerHTML = renderHomeView();
+      else if (state.activeTab === 'search') container.innerHTML = renderSearchView();
+      lucide.createIcons();
+    }
+
+    function renderLibraryView() {
+      const filters = ['All', 'EPUB', 'Book', 'Article', 'Notes'];
+      const filtered = state.books.filter(b => state.libraryFilter === 'All' || b.category === state.libraryFilter);
+
+      const filterPills = `
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-1">
+            ${filters.map(f => `
+              <button onclick="setLibraryFilter('${f}')" class="px-3 py-1 rounded-full text-xs font-medium transition whitespace-nowrap ${
+                state.libraryFilter === f ? 'bg-white text-black' : 'bg-white/[0.06] text-zinc-400 hover:text-zinc-200'
+              }">${f === 'All' ? 'All (' + state.books.length + ')' : f}</button>
+            `).join('')}
+          </div>
+        </div>
+      `;
+
+      if (filtered.length === 0) return filterPills + renderBookshelfEmptyState();
+
+      return filterPills + `
+        <div class="space-y-3">
+          ${filtered.map(book => renderBookCard(book)).join('')}
+        </div>
+      `;
+    }
+
+    function renderBookshelfEmptyState() {
+      return `
+        <div class="flex flex-col items-center justify-center text-center py-12 px-4 space-y-4">
+          <div class="space-y-1.5 max-w-xs">
+            <h3 class="text-base font-bold text-white">Quickly Access Your Content</h3>
+            <p class="text-xs text-zinc-400 leading-relaxed">Drop an .epub or text file anywhere, or tap Upload to cache it offline.</p>
+          </div>
+          <button onclick="openAddModal()" class="px-6 py-2 rounded-full border border-[#0a84ff] text-[#0a84ff] text-xs font-semibold hover:bg-[#0a84ff]/10 transition">
+            Upload EPUB / Text
+          </button>
+        </div>
+      `;
+    }
+
+    function renderBookCard(book) {
+      const blocks = getBookBlocks(book);
+      const total = blocks.length || 1;
+      const pos = Math.min(total, (book.progressPara || 0) + 1);
+      const pct = Math.min(100, Math.round((pos / total) * 100));
+      const tableCount = blocks.filter(b => b.type === 'table').length;
+      const isCurrent = state.activeBookId === book.id;
+      const isConfirming = pendingDeleteId === book.id;
+
+      return `
+        <div class="group bg-[#14161c] hover:bg-[#191c24] border ${isCurrent ? 'border-[#0a84ff]/50' : 'border-white/[0.07]'} rounded-2xl p-3 flex items-center gap-3.5 transition cursor-pointer" onclick="openBook('${book.id}')">
+          <div class="w-14 h-20 rounded-xl bg-gradient-to-br ${book.coverGradient} p-2 flex flex-col justify-between shrink-0 shadow-md relative overflow-hidden">
+            <div class="w-1.5 h-3 bg-white/80 rounded-b-sm absolute top-0 right-2"></div>
+            <span class="text-[9px] uppercase tracking-wider font-semibold text-white/75">${book.category}</span>
+            <span class="text-[10px] font-bold text-white leading-tight line-clamp-2">${escapeHtml(book.title)}</span>
+          </div>
+
+          <div class="flex-1 min-w-0 space-y-1.5">
+            <div class="flex items-start justify-between gap-1.5">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-white truncate">${escapeHtml(book.title)}</h3>
+                <p class="text-xs text-zinc-400 truncate">${escapeHtml(book.author)}</p>
+              </div>
+              <div class="flex items-center gap-0.5 shrink-0" onclick="event.stopPropagation()">
+                <button onclick="toggleFavorite('${book.id}')" class="p-1.5 rounded-full hover:bg-white/10 transition">
+                  <i data-lucide="heart" class="w-4 h-4 ${book.favorite ? 'text-rose-500 fill-rose-500' : 'text-zinc-500'}"></i>
+                </button>
+                <button onclick="deleteBook('${book.id}')" class="px-1.5 py-1 rounded-full hover:bg-white/10 transition text-[10px] ${isConfirming ? 'bg-rose-500/20 text-rose-400 font-semibold' : 'text-zinc-500'}">
+                  ${isConfirming ? 'Remove?' : '<i data-lucide="trash-2" class="w-3.5 h-3.5"></i>'}
+                </button>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div class="h-full bg-[#0a84ff] rounded-full" style="width: ${pct}%"></div>
+              </div>
+              <span class="text-[10px] text-zinc-300 font-mono">${pct}%</span>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-zinc-500">
+              <span>${pos} / ${total}${tableCount ? ` · ${tableCount} table${tableCount > 1 ? 's' : ''}` : ''}</span>
+              <span class="text-[#0a84ff] font-medium flex items-center gap-1">
+                <i data-lucide="headphones" class="w-3 h-3"></i> ${book.progressPara > 0 ? 'Resume' : 'Listen'}
+              </span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function deleteBook(id) {
+      if (pendingDeleteId !== id) {
+        pendingDeleteId = id;
+        renderMainContent();
+        setTimeout(() => {
+          if (pendingDeleteId === id) {
+            pendingDeleteId = null;
+            renderMainContent();
+          }
+        }, 3000);
+        return;
+      }
+      pendingDeleteId = null;
+      if (state.activeBookId === id) stopAndHideMini();
+      state.books = state.books.filter(b => b.id !== id);
+      saveState();
+      renderMainContent();
+      showToast('Removed from Library');
+    }
+
+    function renderFavoritesView() {
+      const favs = state.books.filter(b => b.favorite);
+      if (favs.length === 0) {
+        return `
+          <div class="flex flex-col items-center justify-center text-center py-16 px-4 space-y-3">
+            <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-zinc-500">
+              <i data-lucide="heart" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-sm font-semibold text-white">No Favorites Yet</h3>
+            <p class="text-xs text-zinc-400 max-w-xs">Tap the heart icon on any book or EPUB in My Library to pin it here.</p>
+          </div>
+        `;
+      }
+      return `<div class="space-y-3">${favs.map(b => renderBookCard(b)).join('')}</div>`;
+    }
+
+    function renderHomeView() {
+      const recent = state.books[0];
+      const totalBookmarks = state.books.reduce((sum, b) => sum + (b.bookmarks?.length || 0) + (b.anchors?.length || 0), 0);
+      return `
+        <div class="space-y-5">
+          ${recent ? `
+            <div class="rounded-3xl bg-gradient-to-br from-[#162238] via-[#121622] to-[#121318] border border-white/10 p-4 space-y-3 shadow-lg">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-[#38bdf8]">Continue Learning</span>
+                <span class="text-[11px] text-zinc-400">${recent.category}</span>
+              </div>
+              <div class="flex items-center gap-3.5">
+                <div class="w-14 h-20 rounded-xl bg-gradient-to-br ${recent.coverGradient} p-2 flex items-end shrink-0 shadow">
+                  <span class="text-[10px] font-bold text-white leading-tight line-clamp-2">${escapeHtml(recent.title)}</span>
+                </div>
+                <div class="min-w-0 flex-1 space-y-1">
+                  <h2 class="text-base font-bold text-white truncate">${escapeHtml(recent.title)}</h2>
+                  <p class="text-xs text-zinc-400 truncate">${escapeHtml(recent.author)}</p>
+                  <button onclick="openBook('${recent.id}', true)" class="mt-2 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-white text-black text-xs font-semibold hover:bg-zinc-200 transition">
+                    <i data-lucide="play" class="w-3.5 h-3.5 fill-current"></i>
+                    <span>${recent.progressPara > 0 ? 'Resume' : 'Stream Now'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="grid grid-cols-3 gap-2.5">
+            <div class="bg-[#14161c] border border-white/[0.07] rounded-2xl p-3 text-center">
+              <p class="text-lg font-bold text-white">${state.books.length}</p>
+              <p class="text-[11px] text-zinc-400">Cached</p>
+            </div>
+            <div class="bg-[#14161c] border border-white/[0.07] rounded-2xl p-3 text-center">
+              <p class="text-lg font-bold text-white">${state.books.filter(b => b.favorite).length}</p>
+              <p class="text-[11px] text-zinc-400">Favorites</p>
+            </div>
+            <div class="bg-[#14161c] border border-white/[0.07] rounded-2xl p-3 text-center">
+              <p class="text-lg font-bold text-white">${totalBookmarks}</p>
+              <p class="text-[11px] text-zinc-400">Pins</p>
+            </div>
+          </div>
+
+          <div class="bg-[#14161c] border border-white/[0.07] rounded-2xl p-4 flex items-center justify-between gap-3">
+            <div class="space-y-1">
+              <h3 class="text-sm font-semibold text-white">Voice Engine</h3>
+              <p class="text-xs text-zinc-400">${escapeHtml(getActiveVoiceDisplay())} · ${state.ttsApiKey ? (state.ttsProvider === 'openai' ? 'OpenAI Neural' : 'ElevenLabs Neural') : 'Offline Device Voice'}</p>
+            </div>
+            <button onclick="openVoiceModal()" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-medium text-white transition">
+              Configure
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSearchView() {
+      const q = state.searchQuery.trim().toLowerCase();
+      const matches = q
+        ? state.books.filter(b =>
+            b.title.toLowerCase().includes(q) ||
+            b.author.toLowerCase().includes(q) ||
+            getBookBlocks(b).slice(0, 200).some(bl => getBlockSpokenText(bl).toLowerCase().includes(q))
+          )
+        : state.books;
+
+      return `
+        <div class="space-y-4">
+          <div class="relative">
+            <i data-lucide="search" class="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+            <input
+              id="searchInput"
+              type="text"
+              value="${escapeHtml(state.searchQuery)}"
+              oninput="onSearchInput(this.value)"
+              placeholder="Search titles, authors, tables, or passages..."
+              class="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-[#16181f] border border-white/10 text-sm text-white focus:outline-none focus:border-[#0a84ff]"
+            />
+          </div>
+          <div class="space-y-3">
+            ${matches.length > 0
+              ? matches.map(b => renderBookCard(b)).join('')
+              : `<p class="text-center text-xs text-zinc-500 py-10">No matching books or passages found.</p>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function onSearchInput(val) {
+      state.searchQuery = val;
+      renderMainContent();
+      const input = document.getElementById('searchInput');
+      if (input) {
+        input.focus();
+        input.setSelectionRange(val.length, val.length);
+      }
+    }
+
+    function setLibraryFilter(filter) {
+      state.libraryFilter = filter;
+      renderMainContent();
+    }
+
+    function toggleFavorite(id) {
+      const book = state.books.find(b => b.id === id);
+      if (!book) return;
+      book.favorite = !book.favorite;
+      saveState();
+      renderMainContent();
+      showToast(book.favorite ? 'Added to Favorites' : 'Removed from Favorites');
+    }
+
+    // ---------- Windowed Reader, Inline Study Actions & Text Scan ----------
+    function openBook(id, autoPlay = false) {
+      const book = state.books.find(b => b.id === id);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+
+      const isDifferentBook = state.activeBookId !== id;
+      if (isDifferentBook) {
+        stopSpeech();
+        state.activeBookId = id;
+        state.activeParaIndex = book.progressPara || 0;
+        if (state.activeParaIndex >= blocks.length) state.activeParaIndex = 0;
+      }
+
+      document.getElementById('readerView').classList.remove('hidden');
+      applyReaderTheme();
+      renderReaderBody();
+      updateReaderProgressUI();
+      updateMiniPlayer();
+
+      if (autoPlay) startNarration();
+    }
+
+    function closeReader() {
+      document.getElementById('readerView').classList.add('hidden');
+      document.getElementById('readerSettingsPanel').classList.add('hidden');
+      updateMiniPlayer();
+      renderMainContent();
+    }
+
+    function reopenActiveBook() {
+      if (state.activeBookId) openBook(state.activeBookId, false);
+    }
+
+    function renderWordScanSpans(text, blockIdx) {
+      const words = text.split(/\s+/);
+      return words.map((w, wIdx) =>
+        `<span class="word-span ${state.isPlaying && wIdx === currentWordIdx ? 'active-word' : ''}" data-p="${blockIdx}" data-w="${wIdx}">${escapeHtml(w)}</span>`
+      ).join(' ');
+    }
+
+    function updateStudyBadges(book) {
+      const pinsBadge = document.getElementById('pinsCountBadge');
+      const notesBadge = document.getElementById('notesCountBadge');
+      if (pinsBadge) {
+        pinsBadge.textContent = (book.bookmarks?.length || 0) + (book.anchors?.length || 0);
+      }
+      if (notesBadge) {
+        notesBadge.textContent = (book.notes?.length || 0);
+      }
+    }
+
+    function renderReaderBody() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      const activeIdx = state.activeParaIndex;
+      const activeBlock = blocks[activeIdx];
+
+      document.getElementById('readerTitle').textContent = book.title;
+      document.getElementById('readerChapterLabel').textContent = activeBlock?.chapter || `${book.author} · ${book.category}`;
+      updateStudyBadges(book);
+
+      const body = document.getElementById('readerBody');
+      body.style.fontSize = `${state.fontSize}px`;
+
+      const half = Math.floor(WINDOW_SIZE / 2);
+      const start = Math.max(0, activeIdx - half);
+      const end = Math.min(blocks.length, start + WINDOW_SIZE);
+
+      let html = '';
+      if (start > 0) {
+        html += `<button onclick="jumpToParagraph(${Math.max(0, start - WINDOW_SIZE)})" class="w-full py-2 text-xs text-zinc-400 hover:text-white bg-white/[0.04] rounded-xl">↑ Load earlier blocks (${start} above)</button>`;
+      }
+
+      for (let idx = start; idx < end; idx++) {
+        const block = blocks[idx];
+        const isActive = idx === activeIdx;
+        const isBookmarked = (book.bookmarks || []).includes(idx);
+        const anchor = (book.anchors || []).find(a => a.idx === idx);
+        const blockNotes = (book.notes || []).filter(n => n.idx === idx);
+
+        const pinTags = `
+          ${isBookmarked ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-semibold mr-1">★ Bookmark</span>` : ''}
+          ${anchor ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold mr-1">⚓ ${escapeHtml(anchor.label)}</span>` : ''}
+          ${blockNotes.length ? `<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-[#0a84ff]/20 text-[#38bdf8] text-[10px] font-semibold mr-1">📝 ${blockNotes.length} Note${blockNotes.length > 1 ? 's' : ''}</span>` : ''}
+        `;
+
+        const inlineActions = isActive ? `
+          <div class="mt-2 pt-2 border-t border-white/10 flex items-center gap-1.5 flex-wrap" onclick="event.stopPropagation()">
+            <button onclick="openNotesModal()" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-medium text-zinc-200">+ Note</button>
+            <button onclick="openPinsModal()" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-medium text-zinc-200">+ Anchor</button>
+            <button onclick="toggleBookmarkCurrent()" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-medium text-zinc-200">${isBookmarked ? 'Unbookmark' : 'Bookmark'}</button>
+            <button onclick="openLookupForCurrent()" class="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-medium text-zinc-200">Lookup</button>
+          </div>
+        ` : '';
+
+        if (block.type === 'table') {
+          const headers = block.headers || [];
+          const rows = block.rows || [];
+          html += `
+            <div id="para-${idx}" onclick="jumpToParagraph(${idx})" class="reader-paragraph ${isActive ? 'active-para' : ''} border border-white/10 rounded-xl p-3 space-y-2">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <span class="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                  📊 ${escapeHtml(block.caption || 'Data Table')}
+                </span>
+                <div>${pinTags}</div>
+              </div>
+              <div class="overflow-x-auto rounded-lg border border-white/10">
+                <table class="w-full text-left border-collapse text-xs">
+                  ${headers.length ? `
+                    <thead class="bg-white/10 font-semibold">
+                      <tr>${headers.map(h => `<th class="px-2.5 py-2 border-b border-white/10 whitespace-nowrap">${escapeHtml(h)}</th>`).join('')}</tr>
+                    </thead>
+                  ` : ''}
+                  <tbody>
+                    ${rows.map(r => `
+                      <tr class="border-b border-white/5 last:border-0">
+                        ${r.map(cell => `<td class="px-2.5 py-2 align-top opacity-95">${escapeHtml(cell)}</td>`).join('')}
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+              ${inlineActions}
+            </div>
+          `;
+        } else if (block.type === 'heading') {
+          html += `
+            <div id="para-${idx}" onclick="jumpToParagraph(${idx})" class="reader-paragraph ${isActive ? 'active-para' : ''} font-bold text-xl leading-snug tracking-tight">
+              ${pinTags ? `<div class="mb-1">${pinTags}</div>` : ''}
+              ${isActive ? renderWordScanSpans(block.text || '', idx) : escapeHtml(block.text || '')}
+              ${inlineActions}
+            </div>
+          `;
+        } else {
+          html += `
+            <div id="para-${idx}" onclick="jumpToParagraph(${idx})" class="reader-paragraph ${isActive ? 'active-para' : ''} relative">
+              ${pinTags ? `<div class="mb-1">${pinTags}</div>` : ''}
+              ${isActive ? renderWordScanSpans(block.text || '', idx) : escapeHtml(block.text || '')}
+              ${inlineActions}
+            </div>
+          `;
+        }
+      }
+
+      if (end < blocks.length) {
+        html += `<button onclick="jumpToParagraph(${end})" class="w-full py-2 text-xs text-zinc-400 hover:text-white bg-white/[0.04] rounded-xl">↓ Load next blocks (${blocks.length - end} remaining)</button>`;
+      }
+
+      body.innerHTML = html;
+      updateBookmarkIcon();
+    }
+
+    // ---------- Bookmarks & Anchors Drawer ----------
+    function openPinsModal() {
+      renderPinsList();
+      document.getElementById('pinsModal').classList.remove('hidden');
+    }
+
+    function renderPinsList() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      const list = document.getElementById('pinsList');
+
+      const anchors = (book.anchors || []).map(a => ({ kind: 'anchor', idx: a.idx, label: a.label }));
+      const bms = (book.bookmarks || []).map(idx => ({ kind: 'bookmark', idx, label: getBlockSpokenText(blocks[idx] || {}).slice(0, 65) + '...' }));
+
+      const all = [...anchors, ...bms].sort((a, b) => a.idx - b.idx);
+      if (!all.length) {
+        list.innerHTML = `<p class="text-xs text-zinc-400 text-center py-8">No bookmarks or anchors yet. Tap "+ Pin Here" above to drop an anchor at your current spot.</p>`;
+        return;
+      }
+
+      list.innerHTML = all.map(item => `
+        <div class="p-3 rounded-2xl bg-black/35 border border-white/10 flex items-center justify-between gap-2">
+          <button onclick="jumpToParagraph(${item.idx}); closeModal('pinsModal');" class="flex-1 text-left min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] font-semibold uppercase ${item.kind === 'anchor' ? 'text-emerald-400' : 'text-amber-400'}">
+                ${item.kind === 'anchor' ? '⚓ Anchor' : '★ Bookmark'}
+              </span>
+              <span class="text-[10px] text-zinc-500 font-mono">Block #${item.idx + 1}</span>
+            </div>
+            <p class="text-xs font-medium text-white truncate mt-0.5">${escapeHtml(item.label)}</p>
+          </button>
+          <button onclick="removePin('${item.kind}', ${item.idx})" class="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 text-xs shrink-0 transition">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function addAnchorAtCurrent() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const input = document.getElementById('anchorLabelInput');
+      const label = input.value.trim() || `Anchor at Block #${state.activeParaIndex + 1}`;
+      book.anchors = book.anchors || [];
+      const existing = book.anchors.findIndex(a => a.idx === state.activeParaIndex);
+      if (existing >= 0) book.anchors[existing].label = label;
+      else book.anchors.push({ idx: state.activeParaIndex, label });
+      input.value = '';
+      saveState();
+      renderPinsList();
+      renderReaderBody();
+      showToast(`Pinned: ${label}`);
+    }
+
+    function removePin(kind, idx) {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      if (kind === 'anchor') {
+        book.anchors = (book.anchors || []).filter(a => a.idx !== idx);
+      } else {
+        book.bookmarks = (book.bookmarks || []).filter(b => b !== idx);
+      }
+      saveState();
+      renderPinsList();
+      renderReaderBody();
+    }
+
+    // ---------- Study Notes Drawer ----------
+    function openNotesModal() {
+      document.getElementById('notesContextLabel').textContent = `Attaching to Block #${state.activeParaIndex + 1}`;
+      renderNotesList();
+      document.getElementById('notesModal').classList.remove('hidden');
+    }
+
+    function renderNotesList() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const notes = book.notes || [];
+      const list = document.getElementById('notesList');
+
+      if (!notes.length) {
+        list.innerHTML = `<p class="text-xs text-zinc-400 text-center py-6">No study notes in this book yet.</p>`;
+        return;
+      }
+
+      list.innerHTML = notes.map(n => `
+        <div class="p-3 rounded-2xl bg-black/35 border border-white/10 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <button onclick="jumpToParagraph(${n.idx}); closeModal('notesModal');" class="text-[11px] font-semibold text-[#38bdf8] hover:underline">
+              Block #${n.idx + 1} · Jump ↗
+            </button>
+            <button onclick="deleteNote('${n.id}')" class="text-[11px] text-zinc-400 hover:text-rose-400">Delete</button>
+          </div>
+          <p class="text-xs text-zinc-100 leading-relaxed">${escapeHtml(n.text)}</p>
+        </div>
+      `).join('');
+    }
+
+    function saveNoteAtCurrent() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const input = document.getElementById('noteTextInput');
+      const txt = input.value.trim();
+      if (!txt) {
+        showToast('Write a note first');
+        return;
+      }
+      book.notes = book.notes || [];
+      book.notes.unshift({
+        id: 'note_' + Date.now(),
+        idx: state.activeParaIndex,
+        text: txt,
+        createdAt: new Date().toLocaleDateString()
+      });
+      input.value = '';
+      saveState();
+      renderNotesList();
+      renderReaderBody();
+      showToast('Note saved');
+    }
+
+    function deleteNote(noteId) {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      book.notes = (book.notes || []).filter(n => n.id !== noteId);
+      saveState();
+      renderNotesList();
+      renderReaderBody();
+    }
+
+    // ---------- Quick Lookup Drawer ----------
+    function openLookupModal(initialTerm = '') {
+      const input = document.getElementById('lookupInput');
+      input.value = initialTerm;
+      renderLookupSuggestions();
+      runQuickLookup(initialTerm);
+      document.getElementById('lookupModal').classList.remove('hidden');
+      setTimeout(() => input.focus(), 50);
+    }
+
+    function openLookupForCurrent() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      const text = getBlockSpokenText(blocks[state.activeParaIndex] || {});
+      const keywords = text.split(/\s+/).map(w => w.replace(/[^a-zA-Z0-9-]/g, '')).filter(w => w.length >= 4);
+      openLookupModal(keywords[0] || '');
+    }
+
+    function lookupSelectedActiveTerm() {
+      document.getElementById('lookupInput').value = '';
+      runQuickLookup('');
+    }
+
+    function renderLookupSuggestions() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      const container = document.getElementById('lookupSuggestions');
+      if (!book || !container) return;
+      const blocks = getBookBlocks(book);
+      const text = getBlockSpokenText(blocks[state.activeParaIndex] || {});
+      const words = Array.from(new Set(
+        text.split(/\s+/).map(w => w.replace(/[^a-zA-Z0-9-]/g, '')).filter(w => w.length >= 4)
+      )).slice(0, 6);
+
+      container.innerHTML = words.map(w => `
+        <button onclick="document.getElementById('lookupInput').value='${escapeHtml(w)}'; runQuickLookup('${escapeHtml(w)}')" class="px-2.5 py-1 rounded-full bg-white/[0.07] hover:bg-white/[0.15] text-[11px] text-zinc-200 transition">
+          ${escapeHtml(w)}
+        </button>
+      `).join('');
+    }
+
+    function runQuickLookup(query) {
+      const q = (query || '').trim().toLowerCase();
+      const resEl = document.getElementById('lookupResults');
+      if (!q) {
+        resEl.innerHTML = `<p class="text-xs text-zinc-400 text-center py-6">Tap a keyword chip above or type any term to cross-reference your library offline.</p>`;
+        return;
+      }
+
+      const hits = [];
+      state.books.forEach(b => {
+        const blocks = getBookBlocks(b);
+        blocks.forEach((bl, idx) => {
+          const txt = getBlockSpokenText(bl);
+          if (txt.toLowerCase().includes(q)) {
+            hits.push({ bookId: b.id, bookTitle: b.title, idx, snippet: txt, isCurrent: b.id === state.activeBookId });
+          }
+        });
+      });
+
+      if (!hits.length) {
+        resEl.innerHTML = `<p class="text-xs text-zinc-400 text-center py-6">No matches for "${escapeHtml(query)}" in your cached library.</p>`;
+        return;
+      }
+
+      resEl.innerHTML = hits.slice(0, 30).map(h => `
+        <button onclick="jumpLookupHit('${h.bookId}', ${h.idx})" class="w-full text-left p-3 rounded-2xl bg-black/35 hover:bg-white/10 border border-white/10 space-y-1 transition">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-semibold ${h.isCurrent ? 'text-amber-300' : 'text-[#38bdf8]'} truncate">${escapeHtml(h.bookTitle)}</span>
+            <span class="text-[10px] text-zinc-500 font-mono shrink-0">Block #${h.idx + 1}</span>
+          </div>
+          <p class="text-xs text-zinc-300 line-clamp-2">${escapeHtml(h.snippet)}</p>
+        </button>
+      `).join('');
+    }
+
+    function jumpLookupHit(bookId, idx) {
+      closeModal('lookupModal');
+      if (state.activeBookId === bookId) {
+        jumpToParagraph(idx);
+      } else {
+        const target = state.books.find(b => b.id === bookId);
+        if (target) {
+          target.progressPara = idx;
+          openBook(bookId, false);
+        }
+      }
+    }
+
+    function jumpToParagraph(idx) {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      if (idx < 0 || idx >= blocks.length) return;
+      state.activeParaIndex = idx;
+      currentWordIdx = 0;
+      book.progressPara = idx;
+      saveState();
+      renderReaderBody();
+      updateReaderProgressUI();
+      if (state.isPlaying) speakCurrentParagraph();
+    }
+
+    function togglePlayPause() {
+      if (!state.activeBookId) return;
+      if (state.isPlaying) pauseNarration();
+      else startNarration();
+    }
+
+    function startNarration() {
+      state.isPlaying = true;
+      updatePlayButtons();
+      speakCurrentParagraph();
+    }
+
+    function pauseNarration() {
+      playbackGen++;
+      state.isPlaying = false;
+      stopSpeech();
+      updatePlayButtons();
+      document.getElementById('audioStatusText').textContent = 'Paused';
+      updateMiniPlayer();
+    }
+
+    function stopSpeech() {
+      if ('speechSynthesis' in window) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+      }
+      if (activeAudioEl) {
+        try { activeAudioEl.pause(); } catch (e) {}
+        activeAudioEl = null;
+      }
+      if (simIntervalId) {
+        clearTimeout(simIntervalId);
+        clearInterval(simIntervalId);
+        simIntervalId = null;
+      }
+    }
+
+    function buildWordOffsets(text) {
+      const offsets = [];
+      const regex = /\S+/g;
+      let m;
+      while ((m = regex.exec(text)) !== null) {
+        offsets.push({ start: m.index, end: m.index + m[0].length });
+      }
+      return offsets;
+    }
+
+    function splitIntoSentenceChunks(text) {
+      const words = text.split(/\s+/).filter(Boolean);
+      const chunks = [];
+      let start = 0;
+      for (let i = 0; i < words.length; i++) {
+        const isEnd = /[.!?]["'”\)]*$/.test(words[i]) || (i - start >= 18 && /[,;:]$/.test(words[i])) || i === words.length - 1;
+        if (isEnd) {
+          const slice = words.slice(start, i + 1);
+          chunks.push({ text: slice.join(' '), startWord: start, words: slice });
+          start = i + 1;
+        }
+      }
+      return chunks.length ? chunks : [{ text, startWord: 0, words }];
+    }
+
+    function speakSentenceBrowser(chunk, blockType, effectiveRate, voiceProfile, myGen) {
+      return new Promise((resolve) => {
+        if (!('speechSynthesis' in window) || !state.isPlaying || myGen !== playbackGen) {
+          resolve();
+          return;
+        }
+        const offsets = buildWordOffsets(chunk.text);
+        const utter = new SpeechSynthesisUtterance(chunk.text);
+        utter.rate = effectiveRate;
+        utter.pitch = voiceProfile.pitch;
+        const matchedVoice = pickBestSystemVoice(voiceProfile.preferGender);
+        if (matchedVoice) utter.voice = matchedVoice;
+
+        let boundaryFired = false;
+        let fallbackTimer = null;
+
+        const scheduleWordStep = (localIdx) => {
+          if (!state.isPlaying || myGen !== playbackGen || boundaryFired || localIdx >= chunk.words.length) return;
+          currentWordIdx = chunk.startWord + localIdx;
+          if (blockType !== 'table') highlightWord(state.activeParaIndex, currentWordIdx);
+          const w = chunk.words[localIdx] || '';
+          const baseMs = Math.max(130, Math.round((150 + w.length * 36) / effectiveRate));
+          const pauseMs = /[,;:]$/.test(w) ? 140 : (/[.!?]$/.test(w) ? 200 : 0);
+          fallbackTimer = setTimeout(() => scheduleWordStep(localIdx + 1), baseMs + pauseMs);
+          simIntervalId = fallbackTimer;
+        };
+
+        utter.onstart = () => {
+          if (myGen !== playbackGen) return;
+          if (!boundaryFired) scheduleWordStep(0);
+        };
+
+        utter.onboundary = (ev) => {
+          if (myGen !== playbackGen || blockType === 'table') return;
+          if (ev.name === 'word' || typeof ev.charIndex === 'number') {
+            boundaryFired = true;
+            if (fallbackTimer) clearTimeout(fallbackTimer);
+            const ci = ev.charIndex || 0;
+            let found = 0;
+            for (let i = 0; i < offsets.length; i++) {
+              if (ci >= offsets[i].start) found = i;
+              else break;
+            }
+            currentWordIdx = chunk.startWord + found;
+            highlightWord(state.activeParaIndex, currentWordIdx);
+          }
+        };
+
+        utter.onend = () => {
+          if (fallbackTimer) clearTimeout(fallbackTimer);
+          resolve();
+        };
+        utter.onerror = () => {
+          if (fallbackTimer) clearTimeout(fallbackTimer);
+          resolve();
+        };
+        window.speechSynthesis.speak(utter);
+      });
+    }
+
+    async function speakCurrentParagraph() {
+      const myGen = ++playbackGen;
+      stopSpeech();
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+
+      if (state.activeParaIndex >= blocks.length) {
+        handleBookFinished();
+        return;
+      }
+
+      book.progressPara = state.activeParaIndex;
+      saveState();
+      renderReaderBody();
+      updateReaderProgressUI();
+      updateMiniPlayer();
+
+      const activeEl = document.getElementById(`para-${state.activeParaIndex}`);
+      if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      const block = blocks[state.activeParaIndex];
+      const text = getBlockSpokenText(block).slice(0, 2500);
+      const words = text.split(/\s+/).filter(Boolean);
+      currentWordIdx = 0;
+
+      const voiceProfile = getActiveVoice();
+      const effectiveRate = Math.max(0.6, Math.min(2.0, state.speed + voiceProfile.rateOffset));
+
+      document.getElementById('audioStatusText').textContent = block.type === 'table'
+        ? `Table Scan · ${getActiveVoiceDisplay()}`
+        : `Streaming · ${getActiveVoiceDisplay()}`;
+
+      if (block.type !== 'table') highlightWord(state.activeParaIndex, 0);
+
+      if (state.ttsApiKey && navigator.onLine) {
+        try {
+          let resp;
+          if (state.ttsProvider === 'openai') {
+            resp = await fetch('https://api.openai.com/v1/audio/speech', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${state.ttsApiKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                model: 'tts-1',
+                voice: voiceProfile.openaiVoice,
+                input: text,
+                speed: state.speed
+              })
+            });
+          } else {
+            resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceProfile.elevenId}/stream`, {
+              method: 'POST',
+              headers: {
+                'xi-api-key': state.ttsApiKey,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ text, model_id: 'eleven_turbo_v2_5' })
+            });
+          }
+
+          if (myGen !== playbackGen) return;
+          if (resp.ok) {
+            const blob = await resp.blob();
+            if (myGen !== playbackGen) return;
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            if (state.ttsProvider !== 'openai') audio.playbackRate = state.speed;
+            activeAudioEl = audio;
+            audio.ontimeupdate = () => {
+              if (!audio.duration || block.type === 'table') return;
+              const idx = Math.min(words.length - 1, Math.floor((audio.currentTime / audio.duration) * words.length));
+              if (idx !== currentWordIdx) {
+                currentWordIdx = idx;
+                highlightWord(state.activeParaIndex, idx);
+              }
+            };
+            audio.onended = () => {
+              URL.revokeObjectURL(url);
+              if (state.isPlaying && myGen === playbackGen) advanceAfterParagraph(null);
+            };
+            await audio.play();
+            return;
+          }
+        } catch (e) {}
+      }
+
+      if (myGen !== playbackGen) return;
+
+      if ('speechSynthesis' in window) {
+        const chunks = splitIntoSentenceChunks(text);
+        for (let c = 0; c < chunks.length; c++) {
+          if (!state.isPlaying || myGen !== playbackGen) return;
+          await speakSentenceBrowser(chunks[c], block.type, effectiveRate, voiceProfile, myGen);
+        }
+        if (state.isPlaying && myGen === playbackGen) {
+          setTimeout(() => {
+            if (state.isPlaying && myGen === playbackGen) advanceAfterParagraph(null);
+          }, 110);
+        }
+        return;
+      }
+
+      setTimeout(() => {
+        if (state.isPlaying && myGen === playbackGen) advanceAfterParagraph(null);
+      }, words.length * 300 + 350);
+    }
+
+    function advanceAfterParagraph(wordTimer) {
+      if (wordTimer) clearInterval(wordTimer);
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      if (state.activeParaIndex + 1 < blocks.length) {
+        state.activeParaIndex++;
+        speakCurrentParagraph();
+      } else {
+        handleBookFinished();
+      }
+    }
+
+    function handleBookFinished() {
+      const currentIdx = state.books.findIndex(b => b.id === state.activeBookId);
+      if (state.continuousMode === 'loop') {
+        state.activeParaIndex = 0;
+        showToast('Continuous: Looping current item');
+        speakCurrentParagraph();
+      } else if (state.continuousMode === 'next' && state.books.length > 1) {
+        const nextIdx = (currentIdx + 1) % state.books.length;
+        const nextBook = state.books[nextIdx];
+        state.activeBookId = nextBook.id;
+        state.activeParaIndex = 0;
+        nextBook.progressPara = 0;
+        saveState();
+        showToast(`Continuous: Playing "${nextBook.title}"`);
+        renderReaderBody();
+        updateReaderProgressUI();
+        speakCurrentParagraph();
+      } else {
+        state.activeParaIndex = 0;
+        pauseNarration();
+        document.getElementById('audioStatusText').textContent = 'Finished';
+      }
+    }
+
+    function pickBestSystemVoice(preferGender) {
+      if (!systemVoices.length) return null;
+      if (state.customVoiceName) {
+        const exact = systemVoices.find(v => v.name === state.customVoiceName);
+        if (exact) return exact;
+      }
+      const en = systemVoices.filter(v => v.lang && v.lang.startsWith('en'));
+      const pool = en.length ? en : systemVoices;
+      if (preferGender === 'female') {
+        return pool.find(v => /natural|neural|siri|ava|zoe|serena|allison|samantha|google uk english female|google us english/i.test(v.name)) || pool[0];
+      }
+      return pool.find(v => /natural|neural|daniel|arthur|alex|david|google uk english male/i.test(v.name)) || pool[pool.length > 1 ? 1 : 0];
+    }
+
+    function highlightWord(pIdx, wIdx) {
+      document.querySelectorAll('.word-span.active-word').forEach(el => el.classList.remove('active-word'));
+      const target = document.querySelector(`.word-span[data-p="${pIdx}"][data-w="${wIdx}"]`);
+      if (target) target.classList.add('active-word');
+    }
+
+    function prevParagraph() {
+      if (state.activeParaIndex > 0) jumpToParagraph(state.activeParaIndex - 1);
+    }
+
+    function nextParagraph() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      if (state.activeParaIndex + 1 < blocks.length) jumpToParagraph(state.activeParaIndex + 1);
+    }
+
+    function seekByBar(e) {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const idx = Math.min(blocks.length - 1, Math.floor(ratio * blocks.length));
+      jumpToParagraph(idx);
+    }
+
+    function updateReaderProgressUI() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const total = getBookBlocks(book).length || 1;
+      const pct = Math.round(((state.activeParaIndex + 1) / total) * 100);
+      document.getElementById('readerProgressBar').style.width = `${pct}%`;
+      document.getElementById('paraCounter').textContent = `${state.activeParaIndex + 1} / ${total}`;
+    }
+
+    function updatePlayButtons() {
+      const playSvg = document.getElementById('playSvg');
+      const pauseSvg = document.getElementById('pauseSvg');
+      if (playSvg && pauseSvg) {
+        playSvg.classList.toggle('hidden', state.isPlaying);
+        pauseSvg.classList.toggle('hidden', !state.isPlaying);
+      }
+      const miniLbl = document.getElementById('miniPlayLabel');
+      if (miniLbl) miniLbl.textContent = state.isPlaying ? '❚❚' : '▶';
+    }
+
+    function updateMiniPlayer() {
+      const mini = document.getElementById('miniPlayer');
+      const readerOpen = !document.getElementById('readerView').classList.contains('hidden');
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book || readerOpen) {
+        mini.classList.add('hidden');
+        return;
+      }
+      const total = getBookBlocks(book).length || 1;
+      mini.classList.remove('hidden');
+      document.getElementById('miniTitle').textContent = book.title;
+      document.getElementById('miniCover').className = `w-10 h-10 rounded-lg shrink-0 flex items-center justify-center text-white font-bold text-sm shadow bg-gradient-to-br ${book.coverGradient}`;
+      document.getElementById('miniCover').textContent = book.title.charAt(0).toUpperCase();
+      document.getElementById('miniSubtitle').textContent = state.isPlaying
+        ? `Streaming · ${getActiveVoiceDisplay()}`
+        : `Paused · ${state.activeParaIndex + 1}/${total}`;
+
+      const eq = document.getElementById('miniEq');
+      if (state.isPlaying) {
+        eq.classList.remove('hidden');
+        eq.classList.add('flex');
+      } else {
+        eq.classList.add('hidden');
+        eq.classList.remove('flex');
+      }
+      updatePlayButtons();
+    }
+
+    function stopAndHideMini() {
+      pauseNarration();
+      state.activeBookId = null;
+      document.getElementById('miniPlayer').classList.add('hidden');
+      renderMainContent();
+    }
+
+    function openChaptersModal() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      const blocks = getBookBlocks(book);
+      const items = [];
+      let seenChapters = new Set();
+
+      blocks.forEach((b, idx) => {
+        if (b.type === 'heading' || b.type === 'table' || (b.chapter && !seenChapters.has(b.chapter))) {
+          if (b.chapter) seenChapters.add(b.chapter);
+          const label = b.type === 'table'
+            ? `📊 ${b.caption || 'Data Table'}`
+            : (b.type === 'heading' ? b.text : b.chapter);
+          items.push({ idx, label });
+        }
+      });
+
+      const list = document.getElementById('chaptersList');
+      list.innerHTML = items.length ? items.slice(0, 150).map(it => `
+        <button onclick="jumpToParagraph(${it.idx}); closeModal('chaptersModal');" class="w-full text-left px-3 py-2.5 rounded-xl bg-black/30 hover:bg-white/10 border border-white/5 flex items-center justify-between gap-2 transition">
+          <span class="text-xs font-medium text-white truncate">${escapeHtml(it.label)}</span>
+          <span class="text-[10px] text-zinc-400 font-mono shrink-0">#${it.idx + 1}</span>
+        </button>
+      `).join('') : `<p class="text-xs text-zinc-400 text-center py-6">Single-section document</p>`;
+
+      document.getElementById('chaptersModal').classList.remove('hidden');
+    }
+
+    function cycleContinuousMode() {
+      const modes = ['next', 'loop', 'stop'];
+      state.continuousMode = modes[(modes.indexOf(state.continuousMode) + 1) % modes.length];
+      saveState();
+      updateContinuousUI();
+      const labels = {
+        next: 'Continuous: Auto-play next book',
+        loop: 'Continuous: Loop current book',
+        stop: 'Continuous: Stop at end'
+      };
+      showToast(labels[state.continuousMode]);
+    }
+
+    function updateContinuousUI() {
+      const btn = document.getElementById('btnContinuous');
+      const lbl = document.getElementById('continuousLabel');
+      if (!btn || !lbl) return;
+      if (state.continuousMode === 'next') {
+        lbl.textContent = 'Next';
+        btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs transition';
+      } else if (state.continuousMode === 'loop') {
+        lbl.textContent = 'Loop';
+        btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs transition';
+      } else {
+        lbl.textContent = 'Off';
+        btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/[0.06] text-zinc-400 text-xs transition';
+      }
+    }
+
+    function toggleTableMode() {
+      state.tableNarrationMode = state.tableNarrationMode === 'paired' ? 'flat' : 'paired';
+      saveState();
+      updateTableModeUI();
+      renderReaderBody();
+      showToast(state.tableNarrationMode === 'paired' ? 'Tables: Header-Paired' : 'Tables: Row-by-Row');
+    }
+
+    function updateTableModeUI() {
+      const btn = document.getElementById('btnTableMode');
+      if (!btn) return;
+      btn.textContent = state.tableNarrationMode === 'paired' ? 'Header-Paired (Smart)' : 'Row-by-Row';
+    }
+
+    function toggleReaderSettings() {
+      document.getElementById('readerSettingsPanel').classList.toggle('hidden');
+    }
+
+    function setReaderTheme(theme) {
+      state.readerTheme = theme;
+      saveState();
+      applyReaderTheme();
+    }
+
+    function applyReaderTheme() {
+      const view = document.getElementById('readerView');
+      view.classList.remove('bg-[#1b1b1e]', 'text-zinc-100', 'bg-[#f4ecd8]', 'text-[#433422]', 'bg-white', 'text-zinc-900', 'theme-light', 'theme-sepia');
+      if (state.readerTheme === 'sepia') view.classList.add('bg-[#f4ecd8]', 'text-[#433422]', 'theme-sepia');
+      else if (state.readerTheme === 'light') view.classList.add('bg-white', 'text-zinc-900', 'theme-light');
+      else view.classList.add('bg-[#1b1b1e]', 'text-zinc-100');
+      document.getElementById('fontSizeDisplay').textContent = `${state.fontSize}px`;
+    }
+
+    function changeFontSize(delta) {
+      state.fontSize = Math.max(14, Math.min(28, state.fontSize + delta));
+      saveState();
+      document.getElementById('fontSizeDisplay').textContent = `${state.fontSize}px`;
+      document.getElementById('readerBody').style.fontSize = `${state.fontSize}px`;
+    }
+
+    function cycleSpeed() {
+      const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
+      const next = speeds[(speeds.indexOf(state.speed) + 1) % speeds.length];
+      state.speed = next;
+      saveState();
+      document.getElementById('btnSpeed').textContent = next === 1 ? '1x' : `${next}x`;
+      if (state.isPlaying) speakCurrentParagraph();
+    }
+
+    function cycleSleepTimer() {
+      const options = [0, 15, 30, 60];
+      const next = options[(options.indexOf(state.sleepMinutes) + 1) % options.length];
+      state.sleepMinutes = next;
+      if (state.sleepTimerId) clearTimeout(state.sleepTimerId);
+
+      const label = document.getElementById('sleepLabel');
+      if (next > 0) {
+        label.textContent = `${next}m`;
+        label.classList.remove('hidden');
+        state.sleepTimerId = setTimeout(() => {
+          pauseNarration();
+          state.sleepMinutes = 0;
+          label.classList.add('hidden');
+          showToast('Sleep timer ended');
+        }, next * 60 * 1000);
+        showToast(`Sleep timer set for ${next} min`);
+      } else {
+        label.classList.add('hidden');
+        showToast('Sleep timer off');
+      }
+    }
+
+    function toggleBookmarkCurrent() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      if (!book) return;
+      book.bookmarks = book.bookmarks || [];
+      const idx = book.bookmarks.indexOf(state.activeParaIndex);
+      if (idx >= 0) {
+        book.bookmarks.splice(idx, 1);
+        showToast('Bookmark removed');
+      } else {
+        book.bookmarks.push(state.activeParaIndex);
+        showToast('Block bookmarked');
+      }
+      saveState();
+      renderReaderBody();
+    }
+
+    function updateBookmarkIcon() {
+      const book = state.books.find(b => b.id === state.activeBookId);
+      const btn = document.getElementById('btnBookmark');
+      if (!book || !btn) return;
+      const active = (book.bookmarks || []).includes(state.activeParaIndex);
+      btn.style.color = active ? '#fbbf24' : '';
+    }
+
+    function openVoiceModal() {
+      const list = document.getElementById('voiceList');
+      const profilesHtml = `
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mb-1">Narrator Profiles</p>
+        ${VOICE_PROFILES.map(v => {
+          const selected = !state.customVoiceName && v.id === state.voiceProfileId;
+          return `
+            <div class="w-full p-2.5 rounded-2xl border ${selected ? 'border-amber-400/60 bg-amber-500/10' : 'border-white/10 bg-black/30'} flex items-center justify-between gap-2">
+              <button onclick="selectVoice('${v.id}', null)" class="flex-1 text-left">
+                <p class="text-sm font-semibold text-white">${v.name}</p>
+                <p class="text-xs text-zinc-400">${v.tag}</p>
+              </button>
+              <button onclick="previewVoice('${v.id}', null)" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-medium text-white transition">Test</button>
+            </div>
+          `;
+        }).join('')}
+      `;
+
+      const topDeviceVoices = systemVoices.filter(v => v.lang && v.lang.startsWith('en') && scoreVoice(v) > 0).slice(0, 8);
+      const deviceHtml = topDeviceVoices.length ? `
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 mt-3 mb-1">Offline Device Voices</p>
+        ${topDeviceVoices.map(v => {
+          const selected = state.customVoiceName === v.name;
+          const safeName = escapeHtml(v.name).replace(/'/g, "\\'");
+          return `
+            <div class="w-full p-2.5 rounded-2xl border ${selected ? 'border-amber-400/60 bg-amber-500/10' : 'border-white/10 bg-black/30'} flex items-center justify-between gap-2">
+              <button onclick="selectVoice('lily', '${safeName}')" class="flex-1 text-left min-w-0">
+                <p class="text-xs font-semibold text-white truncate">${escapeHtml(v.name)}</p>
+                <p class="text-[10px] text-zinc-400">${escapeHtml(v.lang)}</p>
+              </button>
+              <button onclick="previewVoice('lily', '${safeName}')" class="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-[11px] font-medium text-white shrink-0 transition">Test</button>
+            </div>
+          `;
+        }).join('')}
+      ` : '';
+
+      list.innerHTML = profilesHtml + deviceHtml;
+      document.getElementById('ttsProviderSelect').value = state.ttsProvider;
+      document.getElementById('elevenKeyInput').value = state.ttsApiKey || '';
+      document.getElementById('elKeyStatus').textContent = state.ttsApiKey
+        ? `${state.ttsProvider === 'openai' ? 'OpenAI' : 'ElevenLabs'} active`
+        : 'Offline device voice';
+      document.getElementById('voiceModal').classList.remove('hidden');
+    }
+
+    function onProviderChange() {
+      state.ttsProvider = document.getElementById('ttsProviderSelect').value;
+      saveState();
+    }
+
+    function saveTtsKey() {
+      state.ttsProvider = document.getElementById('ttsProviderSelect').value;
+      state.ttsApiKey = document.getElementById('elevenKeyInput').value.trim();
+      saveState();
+      document.getElementById('elKeyStatus').textContent = state.ttsApiKey
+        ? `${state.ttsProvider === 'openai' ? 'OpenAI' : 'ElevenLabs'} active`
+        : 'Offline device voice';
+      showToast(state.ttsApiKey ? 'Neural voice key saved' : 'Using offline device voice');
+    }
+
+    function previewVoice(profileId, customName) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance("Hello, this is a preview of your Bookshelf narrator voice.");
+        const profile = VOICE_PROFILES.find(p => p.id === profileId) || VOICE_PROFILES[0];
+        u.pitch = profile.pitch;
+        u.rate = Math.max(0.6, state.speed + profile.rateOffset);
+        if (customName) {
+          const v = systemVoices.find(sv => sv.name === customName);
+          if (v) u.voice = v;
+        } else {
+          const v = pickBestSystemVoice(profile.preferGender);
+          if (v) u.voice = v;
+        }
+        window.speechSynthesis.speak(u);
+      }
+    }
+
+    function selectVoice(profileId, customName) {
+      state.voiceProfileId = profileId;
+      state.customVoiceName = customName || null;
+      saveState();
+      updateVoiceLabel();
+      closeModal('voiceModal');
+      if (state.isPlaying) speakCurrentParagraph();
+      showToast(`Voice: ${getActiveVoiceDisplay()}`);
+    }
+
+    function getActiveVoice() {
+      return VOICE_PROFILES.find(v => v.id === state.voiceProfileId) || VOICE_PROFILES[0];
+    }
+
+    function getActiveVoiceDisplay() {
+      if (state.customVoiceName) return state.customVoiceName.split(' ')[0];
+      return getActiveVoice().name;
+    }
+
+    function updateVoiceLabel() {
+      document.getElementById('activeVoiceLabel').textContent = getActiveVoiceDisplay();
+    }
+
+    // ---------- EPUB & File Transcription ----------
+    function openAddModal() { document.getElementById('addModal').classList.remove('hidden'); }
+    function openRedeemModal() { document.getElementById('redeemModal').classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function handleShellDragOver(e) {
+      e.preventDefault();
+      document.getElementById('shellDropOverlay').classList.remove('hidden');
+    }
+    function handleShellDragLeave(e) {
+      if (e.target === document.getElementById('appShell')) {
+        document.getElementById('shellDropOverlay').classList.add('hidden');
+      }
+    }
+    function handleShellDrop(e) {
+      e.preventDefault();
+      document.getElementById('shellDropOverlay').classList.add('hidden');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) processUploadedFile(file);
+    }
+
+    function handleModalDragOver(e) {
+      e.preventDefault();
+      document.getElementById('dropZoneLabel').classList.add('drop-active');
+    }
+    function handleModalDragLeave(e) {
+      document.getElementById('dropZoneLabel').classList.remove('drop-active');
+    }
+    function handleModalDrop(e) {
+      e.preventDefault();
+      document.getElementById('dropZoneLabel').classList.remove('drop-active');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) processUploadedFile(file);
+    }
+
+    function handleFileImport(e) {
+      const file = e.target.files[0];
+      if (file) processUploadedFile(file);
+      e.target.value = '';
+    }
+
+    async function processUploadedFile(file) {
+      if (/\.epub$/i.test(file.name)) {
+        await parseAndReadEpub(file);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        smartIngestAndRead(String(reader.result || ''), file.name);
+      };
+      reader.readAsText(file);
+    }
+
+    async function parseAndReadEpub(file) {
+      if (typeof JSZip === 'undefined') {
+        showToast('EPUB parser unavailable offline until cached');
+        return;
+      }
+      showToast('Transcribing & caching EPUB offline...');
+      try {
+        const buf = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(buf);
+
+        let opfPath = null;
+        const containerFile = zip.file('META-INF/container.xml');
+        if (containerFile) {
+          const cXml = await containerFile.async('text');
+          const cDoc = new DOMParser().parseFromString(cXml, 'application/xml');
+          const rf = cDoc.querySelector('rootfile');
+          if (rf) opfPath = rf.getAttribute('full-path');
+        }
+
+        let title = file.name.replace(/\.epub$/i, '').replace(/[_-]+/g, ' ');
+        let author = 'EPUB Book';
+        let chapterFiles = [];
+
+        if (opfPath && zip.file(opfPath)) {
+          const opfText = await zip.file(opfPath).async('text');
+          const opfDoc = new DOMParser().parseFromString(opfText, 'application/xml');
+          const baseDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+
+          const titleEl = opfDoc.querySelector('metadata title, dc\\:title');
+          if (titleEl && titleEl.textContent.trim()) title = titleEl.textContent.trim();
+          const creatorEl = opfDoc.querySelector('metadata creator, dc\\:creator');
+          if (creatorEl && creatorEl.textContent.trim()) author = creatorEl.textContent.trim();
+
+          const manifest = {};
+          opfDoc.querySelectorAll('manifest > item').forEach(it => {
+            manifest[it.getAttribute('id')] = it.getAttribute('href');
+          });
+          opfDoc.querySelectorAll('spine > itemref').forEach(ref => {
+            const href = manifest[ref.getAttribute('idref')];
+            if (href) chapterFiles.push(baseDir + decodeURIComponent(href));
+          });
+        }
+
+        if (!chapterFiles.length) {
+          chapterFiles = Object.keys(zip.files).filter(k => /\.(xhtml|html|htm)$/i.test(k)).sort();
+        }
+
+        const allBlocks = [];
+        for (let i = 0; i < chapterFiles.length; i++) {
+          const zf = zip.file(chapterFiles[i]);
+          if (!zf) continue;
+          const html = await zf.async('text');
+          const doc = new DOMParser().parseFromString(html, 'text/html');
+          const h1 = doc.querySelector('h1, h2, title');
+          const chapterLabel = h1 && h1.textContent.trim() ? h1.textContent.trim().slice(0, 50) : `Section ${i + 1}`;
+          const parsed = extractBlocksFromDocument(doc, chapterLabel);
+          allBlocks.push(...parsed);
+        }
+
+        if (!allBlocks.length) {
+          showToast('No readable text found in EPUB (may be DRM-protected)');
+          return;
+        }
+
+        addBookAndStart(title, author, 'EPUB', allBlocks);
+      } catch (err) {
+        showToast('Could not read EPUB file');
+      }
+    }
+
+    function extractBlocksFromDocument(doc, chapterLabel) {
+      const blocks = [];
+      const body = doc.body || doc.documentElement;
+      if (!body) return blocks;
+
+      const nodes = body.querySelectorAll('h1, h2, h3, p, li, blockquote, table');
+      nodes.forEach(el => {
+        if (el.closest('table') && el.tagName !== 'TABLE') return;
+        if (el.tagName === 'TABLE') {
+          const tableBlock = parseComplexTable(el, chapterLabel);
+          if (tableBlock) blocks.push(tableBlock);
+          return;
+        }
+        const txt = el.textContent.replace(/\s+/g, ' ').trim();
+        if (!txt || txt.length < 2) return;
+        if (/^H[1-3]$/.test(el.tagName)) {
+          blocks.push({ type: 'heading', text: txt, chapter: chapterLabel });
+        } else {
+          blocks.push({ type: 'text', text: txt, chapter: chapterLabel });
+        }
+      });
+      return blocks;
+    }
+
+    function parseComplexTable(tableEl, chapterLabel) {
+      const captionEl = tableEl.querySelector('caption');
+      const caption = captionEl ? captionEl.textContent.replace(/\s+/g, ' ').trim() : '';
+
+      const allRows = Array.from(tableEl.querySelectorAll('tr'));
+      if (!allRows.length) return null;
+
+      let headers = [];
+      const dataRows = [];
+
+      allRows.forEach((tr, rIdx) => {
+        const cells = Array.from(tr.children).filter(c => c.tagName === 'TH' || c.tagName === 'TD');
+        const expanded = [];
+        cells.forEach(cell => {
+          const span = Math.max(1, parseInt(cell.getAttribute('colspan') || '1', 10));
+          const val = cell.textContent.replace(/\s+/g, ' ').trim() || '—';
+          for (let k = 0; k < span; k++) expanded.push(val);
+        });
+
+        const isHeaderRow = tr.parentElement?.tagName === 'THEAD' ||
+          (rIdx === 0 && cells.every(c => c.tagName === 'TH'));
+        if (isHeaderRow && headers.length === 0) {
+          headers = expanded;
+        } else if (expanded.length) {
+          dataRows.push(expanded);
+        }
+      });
+
+      if (!headers.length && dataRows.length > 1) {
+        headers = dataRows.shift();
+      }
+      if (!headers.length && !dataRows.length) return null;
+
+      return { type: 'table', chapter: chapterLabel, caption, headers, rows: dataRows };
+    }
+
+    function smartReadPastedText() {
+      const raw = document.getElementById('inputBookContent').value.trim();
+      if (!raw) {
+        showToast('Paste some text or drop a file first');
+        return;
+      }
+      document.getElementById('inputBookContent').value = '';
+      smartIngestAndRead(raw, null);
+    }
+
+    function smartIngestAndRead(rawText, filename) {
+      if (/<(table|html|body|p|h[1-3]|div)\b/i.test(rawText)) {
+        const doc = new DOMParser().parseFromString(rawText, 'text/html');
+        const titleEl = doc.querySelector('title, h1, h2');
+        const title = (titleEl && titleEl.textContent.trim())
+          || (filename ? filename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') : 'Imported Document');
+        const blocks = extractBlocksFromDocument(doc, 'Document');
+        if (blocks.length) {
+          addBookAndStart(title, filename ? 'Uploaded HTML' : 'Pasted HTML', 'Article', blocks);
+          return;
+        }
+      }
+
+      const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      let title = '';
+      if (lines.length > 0 && /^#{1,3}\s+/.test(lines[0])) {
+        title = lines[0].replace(/^#{1,3}\s+/, '').trim();
+        lines.shift();
+      } else if (filename) {
+        title = filename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      } else if (lines.length > 0) {
+        title = lines[0].length <= 60 ? lines[0] : lines[0].slice(0, 54).trim() + '...';
+      } else {
+        title = 'Untitled Reading';
+      }
+
+      const prose = lines.join('\n')
+        .replace(/^#{1,6}\s+/gm, '')
+        .replace(/[*_`~>]+/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+
+      let paragraphs = prose.split(/\n\s*\n/).map(p => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+      if (paragraphs.length === 1 && paragraphs[0].length > 500) {
+        paragraphs = paragraphs[0].match(/[^.!?]+[.!?]+/g)?.map(s => s.trim()) || paragraphs;
+      }
+      if (!paragraphs.length) paragraphs = [rawText.trim() || 'Empty document'];
+
+      const blocks = paragraphs.map(p => ({ type: 'text', text: p, chapter: 'Section' }));
+      addBookAndStart(title, filename ? 'Uploaded File' : 'Quick Paste', filename ? 'Article' : 'Notes', blocks);
+    }
+
+    function addBookAndStart(title, author, category, blocks) {
+      const gradients = [
+        'from-sky-600 to-blue-900',
+        'from-rose-600 to-pink-900',
+        'from-violet-600 to-purple-900',
+        'from-amber-600 to-red-900'
+      ];
+      const newBook = {
+        id: 'book_' + Date.now(),
+        title,
+        author,
+        category,
+        coverGradient: gradients[state.books.length % gradients.length],
+        favorite: false,
+        progressPara: 0,
+        bookmarks: [],
+        anchors: [],
+        notes: [],
+        blocks
+      };
+      state.books.unshift(newBook);
+      saveState();
+      closeModal('addModal');
+      renderMainContent();
+      showToast(`Cached & Streaming: ${title}`);
+      openBook(newBook.id, true);
+    }
+
+    function submitRedeemCode() {
+      const code = document.getElementById('redeemCodeInput').value.trim().toUpperCase();
+      if (code === 'ELEVEN2026') {
+        if (!state.books.some(b => b.id === BONUS_BOOK.id)) {
+          state.books.unshift(JSON.parse(JSON.stringify(BONUS_BOOK)));
+          saveState();
+          renderMainContent();
+        }
+        closeModal('redeemModal');
+        document.getElementById('redeemCodeInput').value = '';
+        showToast('Unlocked: The Future of Synthetic Narration');
+      } else {
+        showToast('Invalid code — try ELEVEN2026');
+      }
+    }
+
+
+    // ---------- Account, Cloud Sync & Backup ----------
+    function openAccountModal() {
+      document.getElementById('syncUserIdInput').value = state.userId || '';
+      document.getElementById('supabaseUrlInput').value = state.supabaseUrl || '';
+      document.getElementById('supabaseKeyInput').value = state.supabaseKey || '';
+      document.getElementById('cloudSyncStatus').textContent = (state.supabaseUrl && state.supabaseKey) ? 'Configured' : 'Local only';
+      document.getElementById('accountModal').classList.remove('hidden');
+    }
+
+    function readAccountInputs() {
+      const uid = document.getElementById('syncUserIdInput').value.trim();
+      if (uid) state.userId = uid;
+      state.supabaseUrl = document.getElementById('supabaseUrlInput').value.trim().replace(/\/$/, '');
+      state.supabaseKey = document.getElementById('supabaseKeyInput').value.trim();
+      saveState();
+    }
+
+    async function pushToCloud() {
+      readAccountInputs();
+      if (!state.supabaseUrl || !state.supabaseKey) {
+        showToast('Enter Supabase URL & Anon Key first');
+        return;
+      }
+      document.getElementById('cloudSyncStatus').textContent = 'Syncing...';
+      try {
+        const resp = await fetch(`${state.supabaseUrl}/rest/v1/user_libraries`, {
+          method: 'POST',
+          headers: {
+            'apikey': state.supabaseKey,
+            'Authorization': `Bearer ${state.supabaseKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify({
+            user_id: state.userId,
+            payload: { books: state.books, voiceProfileId: state.voiceProfileId, speed: state.speed },
+            updated_at: new Date().toISOString()
+          })
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        document.getElementById('cloudSyncStatus').textContent = 'Synced ↑';
+        showToast('Library pushed to cloud');
+      } catch (e) {
+        document.getElementById('cloudSyncStatus').textContent = 'Sync failed';
+        showToast('Cloud push failed — check URL/key/schema');
+      }
+    }
+
+    async function pullFromCloud() {
+      readAccountInputs();
+      if (!state.supabaseUrl || !state.supabaseKey) {
+        showToast('Enter Supabase URL & Anon Key first');
+        return;
+      }
+      document.getElementById('cloudSyncStatus').textContent = 'Pulling...';
+      try {
+        const resp = await fetch(`${state.supabaseUrl}/rest/v1/user_libraries?user_id=eq.${encodeURIComponent(state.userId)}&select=payload`, {
+          headers: {
+            'apikey': state.supabaseKey,
+            'Authorization': `Bearer ${state.supabaseKey}`
+          }
+        });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const rows = await resp.json();
+        if (rows.length && rows[0].payload?.books) {
+          state.books = rows[0].payload.books;
+          saveState();
+          renderApp();
+          document.getElementById('cloudSyncStatus').textContent = 'Synced ↓';
+          showToast('Library pulled from cloud');
+        } else {
+          document.getElementById('cloudSyncStatus').textContent = 'No cloud data yet';
+          showToast('No cloud backup found for this User ID');
+        }
+      } catch (e) {
+        document.getElementById('cloudSyncStatus').textContent = 'Pull failed';
+        showToast('Cloud pull failed — check URL/key');
+      }
+    }
+
+    function exportLibraryBackup() {
+      readAccountInputs();
+      const blob = new Blob([JSON.stringify({ userId: state.userId, books: state.books }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bookshelf_backup_${state.userId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Backup exported');
+    }
+
+    function importLibraryBackup(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(String(reader.result || '{}'));
+          if (Array.isArray(data.books)) {
+            state.books = data.books;
+            if (data.userId) state.userId = data.userId;
+            saveState();
+            renderApp();
+            closeModal('accountModal');
+            showToast('Backup restored');
+          }
+        } catch (err) {
+          showToast('Invalid backup file');
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 2400);
+    }
+  </script>
+</body>
+</html>
