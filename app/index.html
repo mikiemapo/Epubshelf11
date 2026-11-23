@@ -1636,7 +1636,7 @@
       if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
       const block = blocks[state.activeParaIndex];
-      const text = getBlockSpokenText(block).slice(0, 2500);
+      const text = getBlockSpokenText(block);
       const words = text.split(/\s+/).filter(Boolean);
       currentWordIdx = 0;
 
@@ -1710,6 +1710,9 @@
         for (let c = 0; c < chunks.length; c++) {
           if (!state.isPlaying || myGen !== playbackGen) return;
           await speakSentenceBrowser(chunks[c], block.type, effectiveRate, voiceProfile, myGen);
+          if (c < chunks.length - 1 && state.isPlaying && myGen === playbackGen) {
+            await new Promise(r => setTimeout(r, 45));
+          }
         }
         if (state.isPlaying && myGen === playbackGen) {
           setTimeout(() => {
@@ -2239,7 +2242,10 @@
       const body = doc.body || doc.documentElement;
       if (!body) return blocks;
 
-      const nodes = body.querySelectorAll('h1, h2, h3, p, li, blockquote, table');
+      const blockSelector = 'h1, h2, h3, h4, h5, h6, p, li, dt, dd, blockquote, figcaption, table, div';
+      const nodes = body.querySelectorAll(blockSelector);
+      const emitted = new Set();
+
       nodes.forEach(el => {
         if (el.closest('table') && el.tagName !== 'TABLE') return;
         if (el.tagName === 'TABLE') {
@@ -2247,9 +2253,32 @@
           if (tableBlock) blocks.push(tableBlock);
           return;
         }
+
+        // For DIVs, only capture if it contains direct non-whitespace text and no nested block elements
+        if (el.tagName === 'DIV') {
+          const hasBlockChild = el.querySelector('h1, h2, h3, h4, h5, h6, p, li, dt, dd, blockquote, table, div');
+          if (hasBlockChild) return;
+        }
+
+        // Avoid duplicating <p> inside <li> or <blockquote>
+        if (el.tagName === 'P' && el.closest('li, blockquote')) {
+          const parent = el.closest('li, blockquote');
+          if (emitted.has(parent)) return;
+        }
+        if ((el.tagName === 'LI' || el.tagName === 'BLOCKQUOTE') && el.querySelector('p')) {
+          // Let inner <p> handle it unless there is direct text outside <p>
+          const directTxt = Array.from(el.childNodes)
+            .filter(n => n.nodeType === 3)
+            .map(n => n.textContent.trim())
+            .join(' ').trim();
+          if (!directTxt) return;
+        }
+
         const txt = el.textContent.replace(/\s+/g, ' ').trim();
-        if (!txt || txt.length < 2) return;
-        if (/^H[1-3]$/.test(el.tagName)) {
+        if (!txt) return;
+        emitted.add(el);
+
+        if (/^H[1-6]$/.test(el.tagName) || el.tagName === 'DT') {
           blocks.push({ type: 'heading', text: txt, chapter: chapterLabel });
         } else {
           blocks.push({ type: 'text', text: txt, chapter: chapterLabel });
