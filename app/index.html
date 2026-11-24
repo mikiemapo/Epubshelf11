@@ -88,7 +88,7 @@
     }
   
     /* Offline & Electron zero-specificity fallback CSS (so app never loses styling offline) */
-    :where(.hidden) { display: none !important; }
+    :where(.hidden) { display: none; }
     :where(.block) { display: block; }
     :where(.inline-block) { display: inline-block; }
     :where(.flex) { display: flex; }
@@ -212,12 +212,24 @@
     :where(button) { background: transparent; border: 0; color: inherit; cursor: pointer; }
     :where(input, textarea, select) { color: #ffffff; background: #18181b; border: 1px solid rgba(255,255,255,0.12); }
 
+
+    :where(.max-w-4xl) { max-width: 56rem; }
+    @media (min-width: 768px) {
+      :where(.md\:flex) { display: flex; }
+      :where(.md\:h-\[844px\]) { height: 844px; }
+      :where(.md\:h-\[88vh\]) { height: 88vh; }
+      :where(.md\:max-h-\[90vh\]) { max-height: 90vh; }
+      :where(.md\:rounded-\[38px\]) { border-radius: 38px; }
+      :where(.md\:rounded-2xl) { border-radius: 1rem; }
+      :where(.md\:border) { border-width: 1px; border-style: solid; }
+      :where(.md\:border-zinc-800\/90) { border-color: rgba(39, 39, 42, 0.9); }
+    }
   </style>
 </head>
-<body class="min-h-screen flex flex-col items-center justify-center bg-[#050608]">
+<body class="h-screen w-screen overflow-hidden flex flex-col items-center bg-[#050608]">
 
   <!-- Desktop View Mode Toggle -->
-  <div class="hidden md:flex items-center justify-between w-full max-w-5xl px-4 py-2.5 text-xs text-zinc-400">
+  <div class="hidden md:flex items-center justify-between w-full px-5 py-2 bg-[#0b0c10] border-b border-white/[0.06] text-xs text-zinc-400 shrink-0">
     <div class="flex items-center gap-2">
       <span class="inline-flex items-center justify-center w-5 h-5 rounded bg-orange-500/20 text-orange-400 font-bold text-[11px]">B</span>
       <span class="font-medium text-zinc-200">Bookshelf × ElevenReader</span>
@@ -267,7 +279,7 @@
     </header>
 
     <!-- Main Scrollable Content Area -->
-    <main id="mainContent" class="flex-1 overflow-y-auto px-4 py-4 pb-32 space-y-5"></main>
+    <main id="mainContent" class="flex-1 overflow-y-auto px-4 md:px-8 py-5 pb-32 space-y-5 w-full max-w-4xl mx-auto"></main>
 
     <!-- Reader Overlay -->
     <section id="readerView" class="hidden absolute inset-0 z-30 flex flex-col bg-[#1b1b1e] text-zinc-100 transition-colors duration-200">
@@ -910,6 +922,7 @@
       updateContinuousUI();
       updateTableModeUI();
       updateVoiceLabel();
+      if (window.innerWidth >= 768) setViewportMode('full');
       updateOfflineBadge();
       window.addEventListener('online', updateOfflineBadge);
       window.addEventListener('offline', updateOfflineBadge);
@@ -956,13 +969,25 @@
       const bPhone = document.getElementById('btnModePhone');
       const bFull = document.getElementById('btnModeFull');
       if (mode === 'full') {
-        shell.classList.remove('max-w-[430px]', 'md:h-[844px]', 'md:rounded-[38px]');
-        shell.classList.add('max-w-4xl', 'md:h-[88vh]', 'md:rounded-2xl');
+        shell.style.maxWidth = '100%';
+        shell.style.width = '100%';
+        shell.style.height = '100%';
+        shell.style.maxHeight = 'none';
+        shell.style.borderRadius = '0px';
+        shell.style.borderWidth = '0px';
+        shell.classList.remove('max-w-[430px]', 'md:h-[844px]', 'md:rounded-[38px]', 'md:border', 'my-auto');
+        shell.classList.add('flex-1');
         bFull.classList.add('bg-zinc-800', 'text-zinc-100');
         bPhone.classList.remove('bg-zinc-800', 'text-zinc-100');
       } else {
-        shell.classList.add('max-w-[430px]', 'md:h-[844px]', 'md:rounded-[38px]');
-        shell.classList.remove('max-w-4xl', 'md:h-[88vh]', 'md:rounded-2xl');
+        shell.style.maxWidth = '430px';
+        shell.style.width = '100%';
+        shell.style.height = '';
+        shell.style.maxHeight = '';
+        shell.style.borderRadius = '';
+        shell.style.borderWidth = '';
+        shell.classList.add('max-w-[430px]', 'md:h-[844px]', 'md:rounded-[38px]', 'md:border', 'my-auto');
+        shell.classList.remove('flex-1');
         bPhone.classList.add('bg-zinc-800', 'text-zinc-100');
         bFull.classList.remove('bg-zinc-800', 'text-zinc-100');
       }
